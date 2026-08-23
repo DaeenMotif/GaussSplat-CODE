@@ -14,11 +14,12 @@ import math
 import numpy as np
 from typing import NamedTuple
 
-class BasicPointCloud(NamedTuple):
+class BasicPointCloud(NamedTuple): # Class definition for PointCloid
     points : np.array
     colors : np.array
     normals : np.array
 
+# unused function
 def geom_transform_points(points, transf_matrix):
     P, _ = points.shape
     ones = torch.ones(P, 1, dtype=points.dtype, device=points.device)
@@ -28,6 +29,7 @@ def geom_transform_points(points, transf_matrix):
     denom = points_out[..., 3:] + 0.0000001
     return (points_out[..., :3] / denom).squeeze(dim=0)
 
+# Unsued function for World-3D system to Camera-3D system
 def getWorld2View(R, t):
     Rt = np.zeros((4, 4))
     Rt[:3, :3] = R.transpose()
@@ -35,23 +37,26 @@ def getWorld2View(R, t):
     Rt[3, 3] = 1.0
     return np.float32(Rt)
 
-def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
-    Rt = np.zeros((4, 4))
-    Rt[:3, :3] = R.transpose()
+# used in scene/cameras.py and dataset_readers.py
+def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0): # transforms world coord systems points to 3D points in camera's own coord system
+    Rt = np.zeros((4, 4)) # initialize the [R|t]] pose
+    Rt[:3, :3] = R.transpose() # make the world to camera space extrinsic, R is stored transposed due to 'glm' in CUDA code
     Rt[:3, 3] = t
-    Rt[3, 3] = 1.0
+    Rt[3, 3] = 1.0 # Rt transforms world points to camera's own coord system
 
-    C2W = np.linalg.inv(Rt)
-    cam_center = C2W[:3, 3]
+    C2W = np.linalg.inv(Rt) # its inverse to get the camera pose again (C2W)
+    cam_center = C2W[:3, 3] # translation vector t is the cam center here
     cam_center = (cam_center + translate) * scale
     C2W[:3, 3] = cam_center
-    Rt = np.linalg.inv(C2W)
+    Rt = np.linalg.inv(C2W) # reverse again to Rt (W2C) for cam-coord system
     return np.float32(Rt)
 
+# Perspective projection
 def getProjectionMatrix(znear, zfar, fovX, fovY):
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
 
+    # defining the view frustum
     top = tanHalfFovY * znear
     bottom = -top
     right = tanHalfFovX * znear

@@ -15,14 +15,16 @@ from datetime import datetime
 import numpy as np
 import random
 
+# https://en.wikipedia.org/wiki/Logit
+# Applying inverse_sigmoid to derive a logit (similar to wx+b), and then apply logistic regression (which is sigmoid activation)
 def inverse_sigmoid(x):
-    return torch.log(x/(1-x))
+    return torch.log(x/(1-x)) # Obtain logits from raw values: akin to probit function that coverts probability(between 0 and 1) to a score
 
 def PILtoTorch(pil_image, resolution):
-    resized_image_PIL = pil_image.resize(resolution)
-    resized_image = torch.from_numpy(np.array(resized_image_PIL)) / 255.0
+    resized_image_PIL = pil_image.resize(resolution) # resize to a specific resolution
+    resized_image = torch.from_numpy(np.array(resized_image_PIL)) / 255.0 # normalize rgb values
     if len(resized_image.shape) == 3:
-        return resized_image.permute(2, 0, 1)
+        return resized_image.permute(2, 0, 1) # permute: (C, 
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
 
@@ -55,14 +57,16 @@ def get_expon_lr_func(
             )
         else:
             delay_rate = 1.0
-        t = np.clip(step / max_steps, 0, 1)
+        t = np.clip(step / max_steps, 0, 1) # here step is current iter, and max step is total iters we set
+        # what this eq means that lr rate decays exponentially from lr_init to lr_final as step goes from 0 to max_step
+        # so, decay is quick at first and then slows down as step approaches max_step
         log_lerp = np.exp(np.log(lr_init) * (1 - t) + np.log(lr_final) * t)
         return delay_rate * log_lerp
 
     return helper
 
-def strip_lowerdiag(L):
-    uncertainty = torch.zeros((L.shape[0], 6), dtype=torch.float, device="cuda")
+def strip_lowerdiag(L): # this function not used: but is the same CUDA implementation, selecting only right upper triangular entries
+    uncertainty = torch.zeros((L.shape[0], 6), dtype=torch.float, device="cuda") # makes it positive semi-definite 
 
     uncertainty[:, 0] = L[:, 0, 0]
     uncertainty[:, 1] = L[:, 0, 1]
@@ -72,21 +76,23 @@ def strip_lowerdiag(L):
     uncertainty[:, 5] = L[:, 2, 2]
     return uncertainty
 
-def strip_symmetric(sym):
+def strip_symmetric(sym):  # Make symmetric
     return strip_lowerdiag(sym)
 
 def build_rotation(r):
-    norm = torch.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2] + r[:,3]*r[:,3])
+    # r is a N,4 dimensional vector: quaternion (r,x,y,z)
+    # normalize the quaternion: Determines that it is 3D Rotation Matrix  https://kaistackr-my.sharepoint.com/personal/mhsung_kaist_ac_kr/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fmhsung%5Fkaist%5Fac%5Fkr%2FDocuments%2FCourses%2F2022%5Ffall%5Fcs492j%2Fslides%5Fpdf%2Fkaist%5Fcs492j%5Ffall%5F2022%5Flecture%5F4%2Epdf&parent=%2Fpersonal%2Fmhsung%5Fkaist%5Fac%5Fkr%2FDocuments%2FCourses%2F2022%5Ffall%5Fcs492j%2Fslides%5Fpdf&ga=1
+    norm = torch.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2] + r[:,3]*r[:,3]) # calculate l2 norm
+    q = r / norm[:, None] # normalize r/|r|
 
-    q = r / norm[:, None]
+    R = torch.zeros((q.size(0), 3, 3), device='cuda') # create 3X3 rotation for N gaussians
 
-    R = torch.zeros((q.size(0), 3, 3), device='cuda')
-
-    r = q[:, 0]
+    r = q[:, 0] # separate the normalized quaternion components
     x = q[:, 1]
     y = q[:, 2]
     z = q[:, 3]
-
+    # from quaternion recover the (3,3) rotation matrix 
+    
     R[:, 0, 0] = 1 - 2 * (y*y + z*z)
     R[:, 0, 1] = 2 * (x*y - r*z)
     R[:, 0, 2] = 2 * (x*z + r*y)
@@ -98,7 +104,7 @@ def build_rotation(r):
     R[:, 2, 2] = 1 - 2 * (x*x + y*y)
     return R
 
-def build_scaling_rotation(s, r):
+def build_scaling_rotation(s, r): # Why function not used? TODO: Check
     L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
     R = build_rotation(r)
 
@@ -109,9 +115,9 @@ def build_scaling_rotation(s, r):
     L = R @ L
     return L
 
-def safe_state(silent):
+def safe_state(silent): # silent = False
     old_f = sys.stdout
-    class F:
+    class F: # None
         def __init__(self, silent):
             self.silent = silent
 

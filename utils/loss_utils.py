@@ -36,17 +36,26 @@ class FusedSSIMMap(torch.autograd.Function):
         C1, C2 = ctx.C1, ctx.C2
         grad = fusedssim_backward(C1, C2, img1, img2, opt_grad)
         return None, None, grad, None
-
+# Loss: L1: Calculates the mean absolute difference between predicted and actual pixel values
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
-
+# L2 Loss: Measure sq. difference
 def l2_loss(network_output, gt):
     return ((network_output - gt) ** 2).mean()
+
+
+"""
+TODO: Check
+Explain the two basic and reasoning behind this window, gaussian functions in ssim
+Explain the ssim impact in loss
+"""
+
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
 
+# patch window 
 def create_window(window_size, channel):
     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
@@ -62,7 +71,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
-
+# Purpose of SSIM: TODO: Check
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
     mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
     mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)
@@ -85,7 +94,7 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
-
+# Fused ssim is a faster alternative of ssim
 def fast_ssim(img1, img2):
     ssim_map = FusedSSIMMap.apply(C1, C2, img1, img2)
     return ssim_map.mean()

@@ -20,49 +20,52 @@ from utils.general_utils import safe_state, get_expon_lr_func
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace # Simple object for storing attributes
 from arguments import ModelParams, PipelineParams, OptimizationParams
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
-    TENSORBOARD_FOUND = False
+    TENSORBOARD_FOUND = False # TENSORBOARD_FOUND is False
 
 try:
     from fused_ssim import fused_ssim
-    FUSED_SSIM_AVAILABLE = True
+    FUSED_SSIM_AVAILABLE = True # FUSED SSIM USED
 except:
-    FUSED_SSIM_AVAILABLE = False
+    FUSED_SSIM_AVAILABLE = False 
 
 try:
     from diff_gaussian_rasterization import SparseGaussianAdam
     SPARSE_ADAM_AVAILABLE = True
 except:
-    SPARSE_ADAM_AVAILABLE = False
+    SPARSE_ADAM_AVAILABLE = False # SPARSE_ADAM_AVAILABLE = False
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
 
-    if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
+    if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam": # sparse_adam is additional part, not part of original paper, but implemented later
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
 
-    first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    first_iter = 0 # set to 0
+    tb_writer = prepare_output_and_logger(dataset) # output logger
+    # building the gaussian model, setting the initial parameters values of 3D Gaussians, loading respective params to computational-graph for GD 
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
-    if checkpoint:
+    if checkpoint: # if checkpoint exists, loaded here given argument --start_checkpoint
         (model_params, first_iter) = torch.load(checkpoint)
-        gaussians.restore(model_params, opt)
+        gaussians.restore(model_params, opt) # unpack saved tensors from checkpoints
 
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0] # default: black bg; except for NeRF-Synthetic which is white
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda") # load the bg color as a tensor
 
-    iter_start = torch.cuda.Event(enable_timing = True)
+    iter_start = torch.cuda.Event(enable_timing = True) # CUDA Event
     iter_end = torch.cuda.Event(enable_timing = True)
 
+    # we are using default optimizer: adam
     use_sparse_adam = opt.optimizer_type == "sparse_adam" and SPARSE_ADAM_AVAILABLE 
     depth_l1_weight = get_expon_lr_func(opt.depth_l1_weight_init, opt.depth_l1_weight_final, max_steps=opt.iterations)
 
+    # First the training camera views are collected at which is viewpoint stack
     viewpoint_stack = scene.getTrainCameras().copy()
     viewpoint_indices = list(range(len(viewpoint_stack)))
     ema_loss_for_log = 0.0
@@ -90,39 +93,46 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         gaussians.update_learning_rate(iteration)
 
-        # Every 1000 its we increase the levels of SH up to a maximum degree
+        # Every 1K its we increase the levels of SH degree by 1, until we reach the max degree specified in the arguments
+        # SH 1, 2, 3 are viewing direction dependent effects, while SH 0 is just diffuse color
+        # higher degree, higher frequencies can be represented
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
         # Pick a random Camera
-        if not viewpoint_stack:
+        if not viewpoint_stack: # after randomly popping all cameras, we reset the viewpoint stack and viewpoint indices
             viewpoint_stack = scene.getTrainCameras().copy()
             viewpoint_indices = list(range(len(viewpoint_stack)))
-        rand_idx = randint(0, len(viewpoint_indices) - 1)
-        viewpoint_cam = viewpoint_stack.pop(rand_idx)
+        rand_idx = randint(0, len(viewpoint_indices) - 1) # among img list, pick a random index
+        viewpoint_cam = viewpoint_stack.pop(rand_idx) # after pop, is it removed from the list, until all cameras are used and we reset again
         vind = viewpoint_indices.pop(rand_idx)
 
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
-        bg = torch.rand((3), device="cuda") if opt.random_background else background
-
+        bg = torch.rand((3), device="cuda") if opt.random_background else background # opt.random_background = False
+        # render the gaussian scene from the 
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        # what is this alpha mask and why all values are 1 in alphamask?
         if viewpoint_cam.alpha_mask is not None:
-            alpha_mask = viewpoint_cam.alpha_mask.cuda()
+            alpha_mask = viewpoint_cam.alpha_mask.cuda() # 
             image *= alpha_mask
 
-        # Loss
+        
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
-        if FUSED_SSIM_AVAILABLE:
+        # L2 loss would explore with outliers or massive differences which is expected at beginning
+        if FUSED_SSIM_AVAILABLE: # this is true, but why fused ssim
             ssim_value = fused_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
         else:
             ssim_value = ssim(image, gt_image)
 
+        # https://medium.com/@tritamhoang/learning-gaussian-splatting-by-reducing-it-to-2d-956e3d911eb8
+        # unlike L2, L1 gives a stable direct image-space error, and doesnt penalize large errors too much or ignore small error
+        # SSIM adds sensitivity to local structure, edges, and region consistency
+        # Together, they provide a better training signal for reconstruction quality than alternatives like L2
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
 
         # Depth regularization
@@ -145,7 +155,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log # ema_loss: running avg loss over several steps modulated for progress bar
             ema_Ll1depth_for_log = 0.4 * Ll1depth + 0.6 * ema_Ll1depth_for_log
 
             if iteration % 10 == 0:
@@ -175,6 +185,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # Optimizer step
             if iteration < opt.iterations:
+                # identify what is being done there
                 gaussians.exposure_optimizer.step()
                 gaussians.exposure_optimizer.zero_grad(set_to_none = True)
                 if use_sparse_adam:
@@ -190,22 +201,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 def prepare_output_and_logger(args):    
-    if not args.model_path:
-        if os.getenv('OAR_JOB_ID'):
+    if not args.model_path: # if args model path not set
+        if os.getenv('OAR_JOB_ID'): # None
             unique_str=os.getenv('OAR_JOB_ID')
         else:
-            unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+            unique_str = str(uuid.uuid4()) # generate a random str: 20cd9372-d038-4ce4-bbc6-b18b61630e07
+        args.model_path = os.path.join("./output/", unique_str[0:10]) # make new model path: ./output/20cd9372-d038-4ce4-bbc6-b18b61630e07
+
         
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
-    os.makedirs(args.model_path, exist_ok = True)
+    os.makedirs(args.model_path, exist_ok = True) # make a model path dir
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
 
     # Create Tensorboard writer
     tb_writer = None
-    if TENSORBOARD_FOUND:
+    if TENSORBOARD_FOUND: # False
         tb_writer = SummaryWriter(args.model_path)
     else:
         print("Tensorboard not available: not logging progress")
@@ -268,12 +280,13 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
     args = parser.parse_args(sys.argv[1:])
+    # # sys.argv[1:] = ['-s', '/home/daeen/motif/gaussian-splatting/tandt/truck', ... , '--save_iterations', '4000']
     args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
-    safe_state(args.quiet)
+    safe_state(args.quiet) # args.quiet = False
 
     # Start GUI server, configure and run training
     if not args.disable_viewer:

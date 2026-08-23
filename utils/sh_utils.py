@@ -21,10 +21,43 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 
+
+'''
+analyzing spherical harmonics
+Formulas for C1, C2, C3 in https://seolyang.tistory.com/328 and https://gpfault.net/posts/sph.html
+
+
+function y00(x,y,z) { return C[0]; }
+function y_11(x,y,z) { return C[1] * y; }
+function y01(x,y,z) { return C[1] * z; }
+function y11(x,y,z) { return C[1] * x; }
+function y_22(x,y,z) { return C[2] * y * x; }
+function y_12(x,y,z) { return C[2] * y * z; }
+function y02(x,y,z) { return C[3] * (3 * z * z - 1.0); }
+function y12(x,y,z) { return C[2] * x * z; }
+function y22(x,y,z) { return C[4] * (x*x - y*y); }
+function y_33(x,y,z) { return C[5] * y * (3*x*x - y*y); }
+function y_23(x,y,z) { return C[6] * z * (y*x); }
+function y_13(x,y,z) { return C[7] * y * (5*z*z -1); }
+function y03(x,y,z) { return C[8] * z * (5*z*z - 3); }
+function y13(x,y,z) { return C[7] * x * (5 * z * z - 1); }
+function y23(x,y,z) { return C[9] * z * (x*x - y*y); }
+function y33(x,y,z) { return C[5] * x * (x*x - 3*y*y); }
+
+'''
+
+
 import torch
 
+#  spherical harmonic function of degree ℓ and order m, is an associated Legendre polynomial
+# What are these values? Refer to https://en.wikipedia.org/wiki/Table_of_spherical_harmonics
+# deg 0
+# C0 = (1/2)*math.sqrt(1/math.pi)
 C0 = 0.28209479177387814
+# deg 1
+# C1 = C1 = (1/2)*math.sqrt(3/math.pi)*(1)
 C1 = 0.4886025119029199
+# deg 2
 C2 = [
     1.0925484305920792,
     -1.0925484305920792,
@@ -32,6 +65,7 @@ C2 = [
     -1.0925484305920792,
     0.5462742152960396
 ]
+# deg 3
 C3 = [
     -0.5900435899266435,
     2.890611442640554,
@@ -41,6 +75,7 @@ C3 = [
     1.445305721320277,
     -0.5900435899266435
 ]
+# deg 4 (this is not used: design choice: reduce computation)
 C4 = [
     2.5033429417967046,
     -1.7701307697799304,
@@ -54,6 +89,9 @@ C4 = [
 ]   
 
 
+
+# This is similar to the CUDA implemented version
+# This python function is only used if the '--convert_SHs_python' is used for For/Back pass of SHs 
 def eval_sh(deg, sh, dirs):
     """
     Evaluate spherical harmonics at unit directions
@@ -62,8 +100,8 @@ def eval_sh(deg, sh, dirs):
     ... Can be 0 or more batch dimensions.
     Args:
         deg: int SH deg. Currently, 0-3 supported
-        sh: jnp.ndarray SH coeffs [..., C, (deg + 1) ** 2]
-        dirs: jnp.ndarray unit directions [..., 3]
+        sh: jnp.ndarray SH coeffs [..., C, (deg + 1) ** 2] # (3+1)**2 = 16
+        dirs: jnp.ndarray unit directions [..., 3] : normalized 3D viewing directions
     Returns:
         [..., C]
     """
@@ -73,7 +111,7 @@ def eval_sh(deg, sh, dirs):
 
     result = C0 * sh[..., 0]
     if deg > 0:
-        x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3]
+        x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3] 
         result = (result -
                 C1 * y * sh[..., 1] +
                 C1 * z * sh[..., 2] -
@@ -111,6 +149,7 @@ def eval_sh(deg, sh, dirs):
                             C4[8] * (xx * (xx - 3 * yy) - yy * (3 * xx - yy)) * sh[..., 24])
     return result
 
+# why (rgb - 0.5)? Why scaled by C0? There is mathematical formula for both funcs below
 def RGB2SH(rgb):
     return (rgb - 0.5) / C0
 

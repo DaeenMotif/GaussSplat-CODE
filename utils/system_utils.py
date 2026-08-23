@@ -23,6 +23,6 @@ def mkdir_p(folder_path):
         else:
             raise
 
-def searchForMaxIteration(folder):
+def searchForMaxIteration(folder): # search for the maximum iteration; needed for loading checkpoints
     saved_iters = [int(fname.split("_")[-1]) for fname in os.listdir(folder)]
     return max(saved_iters)

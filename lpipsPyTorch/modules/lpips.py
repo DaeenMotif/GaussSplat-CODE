@@ -20,17 +20,17 @@ class LPIPS(nn.Module):
 
         super(LPIPS, self).__init__()
 
-        # pretrained network
-        self.net = get_network(net_type)
+        # pretrained network work as a feature extractor
+        self.net = get_network(net_type) # select one of BaseNets: alexnet, vgg16, or squeezenet
 
         # linear layers
         self.lin = LinLayers(self.net.n_channels_list)
         self.lin.load_state_dict(get_state_dict(net_type, version))
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
-        feat_x, feat_y = self.net(x), self.net(y)
+        feat_x, feat_y = self.net(x), self.net(y) # gather l2 normalized featmaps from multiple layers
 
-        diff = [(fx - fy) ** 2 for fx, fy in zip(feat_x, feat_y)]
+        diff = [(fx - fy) ** 2 for fx, fy in zip(feat_x, feat_y)] # compute squared difference between feature maps
         res = [l(d).mean((2, 3), True) for d, l in zip(diff, self.lin)]
 
         return torch.sum(torch.cat(res, 0), 0, True)

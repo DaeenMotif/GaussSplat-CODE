@@ -34,7 +34,7 @@ import numpy as np
 import struct
 import argparse
 
-
+# TODO: Check
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"]
 )
@@ -53,13 +53,13 @@ class Image(BaseImage):
     def qvec2rotmat(self):
         return qvec2rotmat(self.qvec)
 
-
+# TODO: Check
 CAMERA_MODELS = {
     CameraModel(model_id=0, model_name="SIMPLE_PINHOLE", num_params=3),
     CameraModel(model_id=1, model_name="PINHOLE", num_params=4),
     CameraModel(model_id=2, model_name="SIMPLE_RADIAL", num_params=4),
     CameraModel(model_id=3, model_name="RADIAL", num_params=5),
-    CameraModel(model_id=4, model_name="OPENCV", num_params=8),
+    CameraModel(model_id=4, model_name="OPENCV", num_params=8), # TODO: Check
     CameraModel(model_id=5, model_name="OPENCV_FISHEYE", num_params=8),
     CameraModel(model_id=6, model_name="FULL_OPENCV", num_params=12),
     CameraModel(model_id=7, model_name="FOV", num_params=5),
@@ -132,7 +132,7 @@ def read_cameras_text(path):
                 )
     return cameras
 
-
+# TODO: Check
 def read_cameras_binary(path_to_model_file):
     """
     see: src/colmap/scene/reconstruction.cc
@@ -243,7 +243,7 @@ def read_images_text(path):
                 )
     return images
 
-
+# TODO: Check
 def read_images_binary(path_to_model_file):
     """
     see: src/colmap/scene/reconstruction.cc

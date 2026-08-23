@@ -12,7 +12,7 @@
 import numpy as np
 import collections
 import struct
-
+# TODO: Check
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
 Camera = collections.namedtuple(
@@ -39,8 +39,8 @@ CAMERA_MODEL_IDS = dict([(camera_model.model_id, camera_model)
 CAMERA_MODEL_NAMES = dict([(camera_model.model_name, camera_model)
                            for camera_model in CAMERA_MODELS])
 
-
-def qvec2rotmat(qvec):
+# Reference: https://www.songho.ca/opengl/gl_quaternion.html
+def qvec2rotmat(qvec): # formula for quaternion to rotation matrix
     return np.array([
         [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
          2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
@@ -52,7 +52,7 @@ def qvec2rotmat(qvec):
          2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
          1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
 
-def rotmat2qvec(R):
+def rotmat2qvec(R): # formula to convert rotation maxtrix back to quaternion
     Rxx, Ryx, Rzx, Rxy, Ryy, Rzy, Rxz, Ryz, Rzz = R.flat
     K = np.array([
         [Rxx - Ryy - Rzz, 0, 0, 0],
@@ -62,7 +62,7 @@ def rotmat2qvec(R):
     eigvals, eigvecs = np.linalg.eigh(K)
     qvec = eigvecs[[3, 0, 1, 2], np.argmax(eigvals)]
     if qvec[0] < 0:
-        qvec *= -1
+        qvec *= -1 # # TODO: Check why multiplied by -1
     return qvec
 
 class Image(BaseImage):
@@ -184,19 +184,19 @@ def read_extrinsics_binary(path_to_model_file):
         void Reconstruction::WriteImagesBinary(const std::string& path)
     """
     images = {}
-    with open(path_to_model_file, "rb") as fid:
+    with open(path_to_model_file, "rb") as fid: # path_to_model_file = '/home/daeen/motif/gaussian-splatting/tandt/truck/sparse/0/images.bin'
         num_reg_images = read_next_bytes(fid, 8, "Q")[0]
-        for _ in range(num_reg_images):
+        for _ in range(num_reg_images): # num_reg_images = 251  
             binary_image_properties = read_next_bytes(
                 fid, num_bytes=64, format_char_sequence="idddddddi")
             image_id = binary_image_properties[0]
-            qvec = np.array(binary_image_properties[1:5])
-            tvec = np.array(binary_image_properties[5:8])
-            camera_id = binary_image_properties[8]
+            qvec = np.array(binary_image_properties[1:5]) # extract quaternion from colmap for per-image's camera
+            tvec = np.array(binary_image_properties[5:8]) # extract translation from colmap for per-image's camera
+            camera_id = binary_image_properties[8] # get the cam_id
             image_name = ""
             current_char = read_next_bytes(fid, 1, "c")[0]
-            while current_char != b"\x00":   # look for the ASCII 0 entry
-                image_name += current_char.decode("utf-8")
+            while current_char != b"\x00":   # look for the ASCII 0 entry to unpack image name
+                image_name += current_char.decode("utf-8") #image_name = '000001.jpg'
                 current_char = read_next_bytes(fid, 1, "c")[0]
             num_points2D = read_next_bytes(fid, num_bytes=8,
                                            format_char_sequence="Q")[0]

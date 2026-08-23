@@ -25,7 +25,7 @@ class LinLayers(nn.ModuleList):
         super(LinLayers, self).__init__([
             nn.Sequential(
                 nn.Identity(),
-                nn.Conv2d(nc, 1, 1, 1, 0, bias=False)
+                nn.Conv2d(nc, 1, 1, 1, 0, bias=False) # 1x1 conv w/o bias
             ) for nc in n_channels_list
         ])
 
@@ -39,15 +39,15 @@ class BaseNet(nn.Module):
 
         # register buffer
         self.register_buffer(
-            'mean', torch.Tensor([-.030, -.088, -.188])[None, :, None, None])
+            'mean', torch.Tensor([-.030, -.088, -.188])[None, :, None, None]) # ImageNet normalization
         self.register_buffer(
             'std', torch.Tensor([.458, .448, .450])[None, :, None, None])
 
-    def set_requires_grad(self, state: bool):
+    def set_requires_grad(self, state: bool): # set to false for all NETs
         for param in chain(self.parameters(), self.buffers()):
             param.requires_grad = state
 
-    def z_score(self, x: torch.Tensor):
+    def z_score(self, x: torch.Tensor): # shift and scale to ImageNet distribution
         return (x - self.mean) / self.std
 
     def forward(self, x: torch.Tensor):

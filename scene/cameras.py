@@ -15,7 +15,7 @@ import numpy as np
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 from utils.general_utils import PILtoTorch
 import cv2
-
+# Camera Class transforms a Colmap Image dataset into Torch format
 class Camera(nn.Module):
     def __init__(self, resolution, colmap_id, R, T, FoVx, FoVy, depth_params, image, invdepthmap,
                  image_name, uid,
@@ -39,13 +39,13 @@ class Camera(nn.Module):
             print(f"[Warning] Custom device {data_device} failed, fallback to default cuda device" )
             self.data_device = torch.device("cuda")
 
-        resized_image_rgb = PILtoTorch(image, resolution)
-        gt_image = resized_image_rgb[:3, ...]
-        self.alpha_mask = None
-        if resized_image_rgb.shape[0] == 4:
+        resized_image_rgb = PILtoTorch(image, resolution) # conversion to Torch; shape [C, H, W], C=3
+        gt_image = resized_image_rgb[:3, ...] # differentiate RGB img
+        self.alpha_mask = None # setting additional dim for alpha blending for opacity and density during rendering
+        if resized_image_rgb.shape[0] == 4: # false
             self.alpha_mask = resized_image_rgb[3:4, ...].to(self.data_device)
         else: 
-            self.alpha_mask = torch.ones_like(resized_image_rgb[0:1, ...].to(self.data_device))
+            self.alpha_mask = torch.ones_like(resized_image_rgb[0:1, ...].to(self.data_device)) # 1D alpha mask of size [1, H, W] with 1s
 
         if train_test_exp and is_test_view:
             if is_test_dataset:
@@ -53,7 +53,7 @@ class Camera(nn.Module):
             else:
                 self.alpha_mask[..., self.alpha_mask.shape[-1] // 2:] = 0
 
-        self.original_image = gt_image.clamp(0.0, 1.0).to(self.data_device)
+        self.original_image = gt_image.clamp(0.0, 1.0).to(self.data_device) # gt_image same as self.original_image, except not loaded into CUDA
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
 
@@ -77,18 +77,19 @@ class Camera(nn.Module):
                 self.invdepthmap = self.invdepthmap[..., 0]
             self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).to(self.data_device)
 
-        self.zfar = 100.0
+        # # znear and zfar define the near and far clipping planes of the camera frustum used to project 3D points into 2D screen space
+        self.zfar = 100.0 
         self.znear = 0.01
 
-        self.trans = trans
-        self.scale = scale
-
-        self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda()
-        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
-        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
-        self.camera_center = self.world_view_transform.inverse()[3, :3]
+        self.trans = trans # translation = [0,0,0]
+        self.scale = scale # scale is 1
+        # colmap already has the world pose info, and no additional trans and scales are set 
+        self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda() # get the matrix to project 3D world system -> 3D Cam system coord
+        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda() # projection matrix for 3D cam sys coord to 2D viewspace
+        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0) # T-Matrix: (W2C)->(C2viewspace)
+        self.camera_center = self.world_view_transform.inverse()[3, :3] # get the camera center in world coord system
         
-class MiniCam:
+class MiniCam: # Unused Function
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
         self.image_width = width
         self.image_height = height    

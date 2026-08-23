@@ -23,7 +23,7 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
 
-class CameraInfo(NamedTuple):
+class CameraInfo(NamedTuple): # Class for the camera info: id, [R|t] pose, per-cam image info, intrinsics in form of FovY, FovX
     uid: int
     R: np.array
     T: np.array
@@ -37,11 +37,11 @@ class CameraInfo(NamedTuple):
     height: int
     is_test: bool
 
-class SceneInfo(NamedTuple):
+class SceneInfo(NamedTuple): # The scene info: point cloud with its list of CameraInfos
     point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
-    nerf_normalization: dict
+    nerf_normalization: dict # This nerf_normalization is important: have to do with scene_scale TODO: Analysis
     ply_path: str
     is_nerf_synthetic: bool
 
@@ -68,6 +68,7 @@ def getNerfppNorm(cam_info):
 
     return {"translate": translate, "radius": radius}
 
+# realColmapCameras: read the set of extracted colmap cameras that connects the 3D scene to 2D viewspace
 def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_folder, depths_folder, test_cam_names_list):
     cam_infos = []
     for idx, key in enumerate(cam_extrinsics):
@@ -82,14 +83,14 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
         width = intr.width
 
         uid = intr.id
-        R = np.transpose(qvec2rotmat(extr.qvec))
+        R = np.transpose(qvec2rotmat(extr.qvec)) # in colmap, when we get the rotation matrix for pose, we transpose it. (TODO: ANALYSIS NEEDED)
         T = np.array(extr.tvec)
 
-        if intr.model=="SIMPLE_PINHOLE":
+        if intr.model=="SIMPLE_PINHOLE": # for square images
             focal_length_x = intr.params[0]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
-        elif intr.model=="PINHOLE":
+        elif intr.model=="PINHOLE": # for rectangular images with different focal lengths in x and y
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
             FovY = focal2fov(focal_length_y, height)
@@ -105,24 +106,24 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
             except:
                 print("\n", key, "not found in depths_params")
 
-        image_path = os.path.join(images_folder, extr.name)
-        image_name = extr.name
+        image_path = os.path.join(images_folder, extr.name) # for the image folder, get the individual image paths
+        image_name = extr.name # get the image name
         depth_path = os.path.join(depths_folder, f"{extr.name[:-n_remove]}.png") if depths_folder != "" else ""
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=depth_params,
                               image_path=image_path, image_name=image_name, depth_path=depth_path,
-                              width=width, height=height, is_test=image_name in test_cam_names_list)
+                              width=width, height=height, is_test=image_name in test_cam_names_list) # build individual entries of the whole scene cameras layout
         cam_infos.append(cam_info)
 
     sys.stdout.write('\n')
     return cam_infos
 
-def fetchPly(path):
+def fetchPly(path): # reading the ply pointcloud data
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
-    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
+    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T # why Transposed? TODO: Check
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T # are they zero? TODO: Check
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 def storePly(path, xyz, rgb):
@@ -143,11 +144,11 @@ def storePly(path, xyz, rgb):
     ply_data.write(path)
 
 def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
-    try:
+    try: # our colmapdata exists in .bin format
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
-        cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
-        cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
+        cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file) # TODO: Check 
+        cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file) # TODO: Check 
     except:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.txt")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.txt")
@@ -176,7 +177,7 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
             print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
             sys.exit(1)
 
-    if eval:
+    if eval: # TODO: Check 
         if "360" in path:
             llffhold = 8
         if llffhold:

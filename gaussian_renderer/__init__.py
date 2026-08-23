@@ -15,6 +15,15 @@ from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianR
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
+'''
+Below:
+Viewpoint camera: contains the camera image, fovx, fovy along with projection matrix for 3D->2D
+Also relative pose of camera from colmap
+contains uid
+contains the z_far and z_near to clip the view frustum in 3D
+'''
+
+
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False):
     """
     Render the scene. 
@@ -30,6 +39,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         pass
 
     # Set up rasterization configuration
+    # IN screenspace,  # tanfovx = 0.5W/focal_length 
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
@@ -39,11 +49,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         tanfovx=tanfovx,
         tanfovy=tanfovy,
         bg=bg_color,
-        scale_modifier=scaling_modifier,
+        scale_modifier=scaling_modifier, # 1.0
         viewmatrix=viewpoint_camera.world_view_transform,
         projmatrix=viewpoint_camera.full_proj_transform,
         sh_degree=pc.active_sh_degree,
-        campos=viewpoint_camera.camera_center,
+        campos=viewpoint_camera.camera_center, # tensor is size [3]
         prefiltered=False,
         debug=pipe.debug,
         antialiasing=pipe.antialiasing
@@ -72,11 +82,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     shs = None
     colors_precomp = None
     if override_color is None:
-        if pipe.convert_SHs_python:
-            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
-            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
+        if pipe.convert_SHs_python: ## pc.get_features: [N,16,3] and transpose(1,2).view(-1,3,(3+1)**2) >> [N,3,16]
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2) # pc.get_features is concatenated SH base 0  and higher SH base features
+            # same code below in CUDA: forward.cu:line21 : __device__ glm::vec3 computeColorFromSH
+            # viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1) : [N, 3], get_xyz : [N, 3]
+            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1)) # center of 3D Gaussian - center of cam-center
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
-            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
+            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized) # same formula in CUDA
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
             if separate_sh:
