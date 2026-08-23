@@ -49,26 +49,36 @@ uint32_t getHigherMsb(uint32_t n)
 	return msb;
 }
 
-// Wrapper method to call auxiliary coarse frustum containment test.
+// Wrapper method to call auxiliary coarse frustum containment test. (in_frustum)
 // Mark all Gaussians that pass it.
-__global__ void checkFrustum(int P,
+__global__ void checkFrustum(int P, // this func is a checker for the one in auxiliary.h
 	const float* orig_points,
-	const float* viewmatrix,
+	const float* viewmatrix, //
 	const float* projmatrix,
 	bool* present)
 {
 	auto idx = cg::this_grid().thread_rank();
-	if (idx >= P)
+	if (idx >= P) // if gaussian idx > of number of gaussians
 		return;
 
 	float3 p_view;
-	present[idx] = in_frustum(idx, orig_points, viewmatrix, projmatrix, false, p_view);
+	present[idx] = in_frustum(idx, orig_points, viewmatrix, projmatrix, false, p_view); // present 
 }
+
+/*
+Sorting Algo: prepare for color rendering
+Sorting of the 3D points by depth (proximity to an image plane) and grouping them by tiles.
+The first is needed to compute transmittance.
+Grouping by tiles limit weighted sum for each pixel to α-blending of the relevant 3D points only
+The grouping is achieved using simple 16×16 pixel tiles
+Implemented such that a Gaussian can land in a few tiles if it overlaps more than a single view frustum
+ */
+
 
 // Generates one key/value pair for all Gaussian / tile overlaps. 
 // Run once per Gaussian (1:N mapping).
 __global__ void duplicateWithKeys(
-	int P,
+	int P, // Np. of gaussians
 	const float2* points_xy,
 	const float* depths,
 	const uint32_t* offsets,
@@ -137,8 +147,8 @@ __global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* rang
 		ranges[currtile].y = L;
 }
 
-// Mark Gaussians as visible/invisible, based on view frustum testing
-void CudaRasterizer::Rasterizer::markVisible(
+// Mark Gaussians as visible/invisible, based on view frustum testing (submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py)
+void CudaRasterizer::Rasterizer::markVisible( // Mark visible points (based on frustum culling for camera) with a boolean
 	int P,
 	float* means3D,
 	float* viewmatrix,
@@ -151,13 +161,13 @@ void CudaRasterizer::Rasterizer::markVisible(
 		viewmatrix, projmatrix,
 		present);
 }
-
+// some kind of memory allocation
 CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& chunk, size_t P)
 {
 	GeometryState geom;
 	obtain(chunk, geom.depths, P, 128);
 	obtain(chunk, geom.clamped, P * 3, 128);
-	obtain(chunk, geom.internal_radii, P, 128);
+	obtain(chunk, geom.internal_radii, P, 128); // this serves to guide if we add new params like features
 	obtain(chunk, geom.means2D, P, 128);
 	obtain(chunk, geom.cov3D, P * 6, 128);
 	obtain(chunk, geom.conic_opacity, P, 128);
@@ -168,7 +178,7 @@ CudaRasterizer::GeometryState CudaRasterizer::GeometryState::fromChunk(char*& ch
 	obtain(chunk, geom.point_offsets, P, 128);
 	return geom;
 }
-
+// some kind of memory allocation
 CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, size_t N)
 {
 	ImageState img;
@@ -177,7 +187,7 @@ CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, s
 	obtain(chunk, img.ranges, N, 128);
 	return img;
 }
-
+// Algorithm for RadixSort
 CudaRasterizer::BinningState CudaRasterizer::BinningState::fromChunk(char*& chunk, size_t P)
 {
 	BinningState binning;

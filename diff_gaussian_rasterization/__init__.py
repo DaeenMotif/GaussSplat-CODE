@@ -18,13 +18,14 @@ def cpu_deep_copy_tuple(input_tuple):
     copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
     return tuple(copied_tensors)
 
+# Rasterized components of 3D gaussians: projected 2D means in viewspace, 
 def rasterize_gaussians(
     means3D,
     means2D,
     sh,
     colors_precomp,
     opacities,
-    scales,
+    scales, # 
     rotations,
     cov3Ds_precomp,
     raster_settings,
@@ -66,15 +67,15 @@ class _RasterizeGaussians(torch.autograd.Function):
             rotations,
             raster_settings.scale_modifier,
             cov3Ds_precomp,
-            raster_settings.viewmatrix,
-            raster_settings.projmatrix,
+            raster_settings.viewmatrix, # 4X4 matrix
+            raster_settings.projmatrix, # 
             raster_settings.tanfovx,
             raster_settings.tanfovy,
             raster_settings.image_height,
             raster_settings.image_width,
             sh,
             raster_settings.sh_degree,
-            raster_settings.campos,
+            raster_settings.campos, # camera position in 3D world coord system
             raster_settings.prefiltered,
             raster_settings.antialiasing,
             raster_settings.debug

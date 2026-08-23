@@ -25,17 +25,17 @@ __device__ void computeColorFromSH(int idx, int deg, int max_coeffs, const glm::
 	// Compute intermediate values, as it is done during forward
 	glm::vec3 pos = means[idx];
 	glm::vec3 dir_orig = pos - campos;
-	glm::vec3 dir = dir_orig / glm::length(dir_orig);
+	glm::vec3 dir = dir_orig / glm::length(dir_orig);  // Normalized view direction
 
-	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs;
+	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // pointer to sh coefficients for this specific idx Gaussian
 
 	// Use PyTorch rule for clamping: if clamping was applied,
 	// gradient becomes 0.
-	glm::vec3 dL_dRGB = dL_dcolor[idx];
+	glm::vec3 dL_dRGB = dL_dcolor[idx]; 
 	dL_dRGB.x *= clamped[3 * idx + 0] ? 0 : 1;
 	dL_dRGB.y *= clamped[3 * idx + 1] ? 0 : 1;
 	dL_dRGB.z *= clamped[3 * idx + 2] ? 0 : 1;
-
+	// initialize variables to accumulate gradients wrt view direction
 	glm::vec3 dRGBdx(0, 0, 0);
 	glm::vec3 dRGBdy(0, 0, 0);
 	glm::vec3 dRGBdz(0, 0, 0);
@@ -47,7 +47,7 @@ __device__ void computeColorFromSH(int idx, int deg, int max_coeffs, const glm::
 	glm::vec3* dL_dsh = dL_dshs + idx * max_coeffs;
 
 	// No tricks here, just high school-level calculus.
-	float dRGBdsh0 = SH_C0;
+	float dRGBdsh0 = SH_C0; // // based 0 derivative d(RGB)/d(sh0) = SH_C0. Thus, dL/d(sh0) = (dL/dRGB) * SH_C0
 	dL_dsh[0] = dRGBdsh0 * dL_dRGB;
 	if (deg > 0)
 	{
@@ -127,8 +127,8 @@ __device__ void computeColorFromSH(int idx, int deg, int max_coeffs, const glm::
 		}
 	}
 
-	// The view direction is an input to the computation. View direction
-	// is influenced by the Gaussian's mean, so SHs gradients
+	// The view direction is an input to the computation. View direction; view direction =  gaussian mean - cam_center
+	// is influenced by the Gaussian's mean, so SHs gradients ; any components among mean, covar, opacity that contribute to a differentiable operation
 	// must propagate back into 3D position.
 	glm::vec3 dL_ddir(glm::dot(dRGBdx, dL_dRGB), glm::dot(dRGBdy, dL_dRGB), glm::dot(dRGBdz, dL_dRGB));
 
@@ -417,7 +417,7 @@ __global__ void preprocessCUDA(
 	float* dL_dopacity)
 {
 	auto idx = cg::this_grid().thread_rank();
-	if (idx >= P || !(radii[idx] > 0))
+	if (idx >= P || !(radii[idx] > 0)) // skip if gaussian idx out of range or doesnt have a radii
 		return;
 
 	float3 m = means[idx];
@@ -437,7 +437,7 @@ __global__ void preprocessCUDA(
 
 	// That's the second part of the mean gradient. Previous computation
 	// of cov2D and following SH conversion also affects it.
-	dL_dmeans[idx] += dL_dmean;
+	dL_dmeans[idx] += dL_dmean; // gradient accumulation
 
 	// Compute gradient updates due to computing colors from SHs
 	if (shs)

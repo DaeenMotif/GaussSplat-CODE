@@ -24,7 +24,7 @@ namespace CudaRasterizer
 		std::size_t offset = (reinterpret_cast<std::uintptr_t>(chunk) + alignment - 1) & ~(alignment - 1);
 		ptr = reinterpret_cast<T*>(offset);
 		chunk = reinterpret_cast<char*>(ptr + count);
-	}
+	} // some kind of memory allocation
 
 	struct GeometryState
 	{

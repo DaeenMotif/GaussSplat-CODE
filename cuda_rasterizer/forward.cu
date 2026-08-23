@@ -10,30 +10,47 @@
  */
 
 #include "forward.h"
-#include "auxiliary.h"
+#include "auxiliary.h" // contains the precalculated orthonormalized SH coefficients
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
+// this code is the same logic as utils/sh_utils.py and gaussian_renderer/__init__.py
 __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const glm::vec3* means, glm::vec3 campos, const float* shs, bool* clamped)
 {
 	// The implementation is loosely based on code for 
 	// "Differentiable Point-Based Radiance Fields for 
-	// Efficient View Synthesis" by Zhang et al. (2022)
-	glm::vec3 pos = means[idx];
-	glm::vec3 dir = pos - campos;
-	dir = dir / glm::length(dir);
+	// Efficient View Synthesis" by Zhang et al. (2022) https://github.com/sjtuzq/point-radiance/blob/main/modules/sh.py
+	glm::vec3 pos = means[idx]; // get 3D gaussian mean by indexing the point
+	glm::vec3 dir = pos - campos; // campos is camera center: dir = center of 3D Gaussian - center of cam-center  {vec c = vec a - vec b}
+	
+	// Code from sh_utils.py
+	// assert deg <= 4 and deg >= 0
+    // coeff = (deg + 1) ** 2
+    // assert sh.shape[-1] >= coeff
+    // result = C0 * sh[..., 0]
+    // if deg > 0:
+    //     x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3] 
+    //     result = (result -
+    //             C1 * y * sh[..., 1] +
+    //             C1 * z * sh[..., 2] -
+    //             C1 * x * sh[..., 3])	
 
-	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs;
+
+
+
+	dir = dir / glm::length(dir); // normalize viewing direction vector
+
+	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // TODO: Check
 	glm::vec3 result = SH_C0 * sh[0];
 
 	if (deg > 0)
 	{
-		float x = dir.x;
-		float y = dir.y;
-		float z = dir.z;
+		float x = dir.x; // separate the normalized viewing direction components x
+		float y = dir.y; // separate the normalized viewing direction components y
+		float z = dir.z; // separate the normalized viewing direction components z
 		result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3];
 
 		if (deg > 1)
@@ -60,10 +77,13 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 			}
 		}
 	}
-	result += 0.5f;
+	// From sh_utils.py
+	// def SH2RGB(sh):
+    //    return sh * C0 + 0.5
+	result += 0.5f; // here results is sh * C0
 
 	// RGB colors are clamped to positive values. If values are
-	// clamped, we need to keep track of this for the backward pass.
+	// clamped, we need to keep track of this for the backward pass. TODO: Check
 	clamped[3 * idx + 0] = (result.x < 0);
 	clamped[3 * idx + 1] = (result.y < 0);
 	clamped[3 * idx + 2] = (result.z < 0);
@@ -77,68 +97,75 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 	// and 31 in "EWA Splatting" (Zwicker et al., 2002). 
 	// Additionally considers aspect / scaling of viewport.
 	// Transposes used to account for row-/column-major conventions.
-	float3 t = transformPoint4x3(mean, viewmatrix);
+	// Cov2D = J * W * Cov3D * transpose (W) * transpose(J)
+	float3 t = transformPoint4x3(mean, viewmatrix); // take the xyz location of 3D gaussians and transform to camera view (3D space)
 
-	const float limx = 1.3f * tan_fovx;
-	const float limy = 1.3f * tan_fovy;
+	const float limx = 1.3f * tan_fovx; // tan_fovx = X/Z
+	const float limy = 1.3f * tan_fovy; // tan_fovx = X/Z; gaussians near camera plane 
 	const float txtz = t.x / t.z;
 	const float tytz = t.y / t.z;
 	t.x = min(limx, max(-limx, txtz)) * t.z;
 	t.y = min(limy, max(-limy, tytz)) * t.z;
-
-	glm::mat3 J = glm::mat3(
+	/*
+		J = [[f_x/z   0    -f_x * x /z**2]
+             [  0   f_y/z   -f_y * y /z**2]]
+	
+	*/
+	glm::mat3 J = glm::mat3( 
 		focal_x / t.z, 0.0f, -(focal_x * t.x) / (t.z * t.z),
 		0.0f, focal_y / t.z, -(focal_y * t.y) / (t.z * t.z),
-		0, 0, 0);
-
+		0, 0, 0); // 3x3 glm matrix for jacobian : a transformation from cameras 3Dspace to ray space {projective mapping}
+	
+	// viewmatrix is viewing transfomration:from world sys to camera's own 3D system, viewmatrix is 4X4
 	glm::mat3 W = glm::mat3(
 		viewmatrix[0], viewmatrix[4], viewmatrix[8],
 		viewmatrix[1], viewmatrix[5], viewmatrix[9],
-		viewmatrix[2], viewmatrix[6], viewmatrix[10]);
+		viewmatrix[2], viewmatrix[6], viewmatrix[10]); // column-major [V00, V10, V20, V01, V11, V21, V02, V12, V22] (arranged like an array)
 
-	glm::mat3 T = W * J;
+	glm::mat3 T = W * J; // T = Jacobian * viewing transformation (glm is right multiplications)
 
 	glm::mat3 Vrk = glm::mat3(
 		cov3D[0], cov3D[1], cov3D[2],
 		cov3D[1], cov3D[3], cov3D[4],
-		cov3D[2], cov3D[4], cov3D[5]);
+		cov3D[2], cov3D[4], cov3D[5]); // 3D covariance matrix
 
 	glm::mat3 cov = glm::transpose(T) * glm::transpose(Vrk) * T;
 
-	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) };
+	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) }; // 2D covar is 2x2 MAT, and also +ve-semi-definite so entry [1][0] ignored
 }
 
 // Forward method for converting scale and rotation properties of each
 // Gaussian to a 3D covariance matrix in world space. Also takes care
 // of quaternion normalization.
-__device__ void computeCov3D(const glm::vec3 scale, float mod, const glm::vec4 rot, float* cov3D)
+__device__ void computeCov3D(const glm::vec3 scale, float mod, const glm::vec4 rot, float* cov3D) // Cov3D = R*S*transpose(S)*transpose(R)
 {
-	// Create scaling matrix
+	// Create scaling matrix (3x3 triangular matrix); mod: scale_modifier = kept as 1.0 during training
 	glm::mat3 S = glm::mat3(1.0f);
 	S[0][0] = mod * scale.x;
 	S[1][1] = mod * scale.y;
 	S[2][2] = mod * scale.z;
 
-	// Normalize quaternion to get valid rotation
+	// Normalize quaternion to get valid rotation; already normalized
 	glm::vec4 q = rot;// / glm::length(rot);
-	float r = q.x;
+	float r = q.x; // r is the scalar part; x,y,z are complex components
 	float x = q.y;
 	float y = q.z;
 	float z = q.w;
 
-	// Compute rotation matrix from quaternion
+	// Compute rotation matrix from quaternion, same formula as build_rotation function in utils/general_utils
+	// This formula https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation (right handed rule)
 	glm::mat3 R = glm::mat3(
 		1.f - 2.f * (y * y + z * z), 2.f * (x * y - r * z), 2.f * (x * z + r * y),
 		2.f * (x * y + r * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z - r * x),
 		2.f * (x * z - r * y), 2.f * (y * z + r * x), 1.f - 2.f * (x * x + y * y)
 	);
 
-	glm::mat3 M = S * R;
-
+	glm::mat3 M = S * R; // in paper its R*S, in glm matrix multiplication is Right->left, so it is (RS)
+	// Paper Formula: R*S*transpose(S)*transpose(R) = (RS)*Transpose(RS)
 	// Compute 3D world covariance matrix Sigma
-	glm::mat3 Sigma = glm::transpose(M) * M;
+	glm::mat3 Sigma = glm::transpose(M) * M; // its means M*transpose(M) where (RS)*tranpose(RS)
 
-	// Covariance is symmetric, only store upper right
+	// Covariance is symmetric, only store upper right (positive semi-definiteness)
 	cov3D[0] = Sigma[0][0];
 	cov3D[1] = Sigma[0][1];
 	cov3D[2] = Sigma[0][2];
@@ -147,29 +174,29 @@ __device__ void computeCov3D(const glm::vec3 scale, float mod, const glm::vec4 r
 	cov3D[5] = Sigma[2][2];
 }
 
-// Perform initial steps for each Gaussian prior to rasterization.
+// Perform initial steps for each Gaussian prior to rasterization. // this is the processing from 3D to image pixel colors
 template<int C>
-__global__ void preprocessCUDA(int P, int D, int M,
-	const float* orig_points,
-	const glm::vec3* scales,
-	const float scale_modifier,
-	const glm::vec4* rotations,
-	const float* opacities,
-	const float* shs,
+__global__ void preprocessCUDA(int P, int D, int M, // D is degree of sH, M is max coeff (0-15)
+	const float* orig_points, // original 3D points (mean3D) [N,3]
+	const glm::vec3* scales, // scale vectors [N,3]
+	const float scale_modifier, // value is 1.0
+	const glm::vec4* rotations, // quaternion vectors [N,(r,x,y,z)]
+	const float* opacities, // array of opacities [N]
+	const float* shs, // array of sHs
 	bool* clamped,
-	const float* cov3D_precomp,
-	const float* colors_precomp,
-	const float* viewmatrix,
-	const float* projmatrix,
-	const glm::vec3* cam_pos,
-	const int W, int H,
-	const float tan_fovx, float tan_fovy,
-	const float focal_x, float focal_y,
-	int* radii,
-	float2* points_xy_image,
+	const float* cov3D_precomp, // precomputed Cov3D (if exists) of each 3D gaussian
+	const float* colors_precomp, // precomputed colors (if exists) of each 3D gaussian
+	const float* viewmatrix, // 4X4 3dworld to 3dcamera viewmatrix [R|t] stored as an array 
+	const float* projmatrix, // 4X4 (world-to-viewspace) matrix
+	const glm::vec3* cam_pos, // xyz cam center
+	const int W, int H, // Img width and height in pixels
+	const float tan_fovx, float tan_fovy, // tan of field of views
+	const float focal_x, float focal_y, // focal lengths of image
+	int* radii, // TODO
+	float2* points_xy_image, // TODO
 	float* depths,
-	float* cov3Ds,
-	float* rgb,
+	float* cov3Ds, // Gaussians cov3D matrices
+	float* rgb, // Each gaussian's RGB colors
 	float4* conic_opacity,
 	const dim3 grid,
 	uint32_t* tiles_touched,
@@ -182,67 +209,73 @@ __global__ void preprocessCUDA(int P, int D, int M,
 
 	// Initialize radius and touched tiles to 0. If this isn't changed,
 	// this Gaussian will not be processed further.
-	radii[idx] = 0;
-	tiles_touched[idx] = 0;
+	radii[idx] = 0; // set the radii of the 3D gaussian at idx to 0
+	tiles_touched[idx] = 0; // a counter to check the number of tiles it touches; precursor for duplication in rasterizer_impl.cu
 
 	// Perform near culling, quit if outside.
 	float3 p_view;
-	if (!in_frustum(idx, orig_points, viewmatrix, projmatrix, prefiltered, p_view))
+	if (!in_frustum(idx, orig_points, viewmatrix, projmatrix, prefiltered, p_view)) // dont process gaussians outside view-frustum
 		return;
 
 	// Transform point by projecting
-	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] };
-	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
-	float p_w = 1.0f / (p_hom.w + 0.0000001f);
+	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] }; // 3D mean of gaussians; array is flattened so idx*3
+	float4 p_hom = transformPoint4x4(p_orig, projmatrix); // transform the 3d mean from world to 2D viewspace (NDC coords) [-1,1]
+	float p_w = 1.0f / (p_hom.w + 0.0000001f); // avoid 0-division error
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
 
 	// If 3D covariance matrix is precomputed, use it, otherwise compute
 	// from scaling and rotation parameters. 
 	const float* cov3D;
-	if (cov3D_precomp != nullptr)
+	if (cov3D_precomp != nullptr) // if Cov3D provided
 	{
-		cov3D = cov3D_precomp + idx * 6;
+		cov3D = cov3D_precomp + idx * 6; // 6 because of 6 values (00,01,02,11,12,22) for semi-positive definite matrix
 	}
-	else
+	else // if Cov3D not provided, as standard case
 	{
-		computeCov3D(scales[idx], scale_modifier, rotations[idx], cov3Ds + idx * 6);
-		cov3D = cov3Ds + idx * 6;
+		computeCov3D(scales[idx], scale_modifier, rotations[idx], cov3Ds + idx * 6); // compute the matrix cov3d
+		cov3D = cov3Ds + idx * 6; // cov3D is a contiguous array for all cov3Ds of gaussians, each indexed by idx
 	}
 
 	// Compute 2D screen-space covariance matrix
 	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix);
 
-	constexpr float h_var = 0.3f;
-	const float det_cov = cov.x * cov.z - cov.y * cov.y;
-	cov.x += h_var;
-	cov.z += h_var;
-	const float det_cov_plus_h_cov = cov.x * cov.z - cov.y * cov.y;
+	/*
+	This 8 codelines below are for low-pass filter and antialiasing;
+	cov2d = (sigma_xx, sigma_xy, sigma_yy) == (cov.x, cov.y, cov.z)
+	*/
+	constexpr float h_var = 0.3f; // heuristic variance adder;  adding some positive value to the diagonal means adding λI
+	// make it invertible; positive definite 
+	const float det_cov = cov.x * cov.z - cov.y * cov.y; // cov2D determinant
+	cov.x += h_var; // add the variance to sigma_x
+	cov.z += h_var; // add the variance to sigma_y
+	const float det_cov_plus_h_cov = cov.x * cov.z - cov.y * cov.y; // update the determinant
 	float h_convolution_scaling = 1.0f;
 
-	if(antialiasing)
+	if(antialiasing) // h_convolution_scaling is opacity scaling factor, reduces opacity since enlarging gaussians area should distribute opacity more
 		h_convolution_scaling = sqrt(max(0.000025f, det_cov / det_cov_plus_h_cov)); // max for numerical stability
 
-	// Invert covariance (EWA algorithm)
+	// Invert covariance (EWA algorithm) 
 	const float det = det_cov_plus_h_cov;
-
+	// https://github.com/kwea123/gaussian_splatting_notes 
 	if (det == 0.0f)
 		return;
-	float det_inv = 1.f / det;
-	float3 conic = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv };
-
-	// Compute extent in screen space (by finding eigenvalues of
+	float det_inv = 1.f / det; // do the inversion to get impact of each gaussian on a pixel
+	float3 conic = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv }; // inverse of 2d covariance matrix
+	// https://medium.com/data-science/a-python-engineers-introduction-to-3d-gaussian-splatting-part-2-7e45b270c1df
+	// Compute extent in screen space (by finding eigenvalues)
 	// 2D covariance matrix). Use extent to compute a bounding rectangle
 	// of screen-space tiles that this Gaussian overlaps with. Quit if
 	// rectangle covers 0 tiles. 
-	float mid = 0.5f * (cov.x + cov.z);
-	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
-	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
-	float my_radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
-	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
-	uint2 rect_min, rect_max;
+	float mid = 0.5f * (cov.x + cov.z); // mid is the 0.5*trace of the 2x2 matrix
+	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det)); // eigenvalue1 radii of the projected ellipsis along major/minor axis
+	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det)); // eigenvalue2 radii of the projected ellipsis along major/minor axis
+	// 3 times sqrt of largest eignvalue represents 3 standard deviation = covers 99.7% of projected 2D gaussian distribution
+	float my_radius = ceil(3.f * sqrt(max(lambda1, lambda2))); // compute the extent in screenspace
+	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) }; // convert NDC -> pixel coord of gaussian
+	uint2 rect_min, rect_max; // initialize the rectangle
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
 	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
-		return;
+		return; // Cull if it doesn't intersect any tiles ( outside the frustum)
 
 	// If colors have been precomputed, use them, otherwise convert
 	// spherical harmonics coefficients to RGB color.
@@ -255,14 +288,14 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	}
 
 	// Store some useful helper data for the next steps.
-	depths[idx] = p_view.z;
-	radii[idx] = my_radius;
-	points_xy_image[idx] = point_image;
+	depths[idx] = p_view.z;  // The depth in camera space (used as the sorting key later)
+	radii[idx] = my_radius; // The radius is in pixel
+	points_xy_image[idx] = point_image; //center of the Gaussian in 2D pixel coordinate
 	// Inverse 2D covariance and opacity neatly pack into one float4
 	float opacity = opacities[idx];
 
 
-	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling };
+	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling }; // opacity scaled for anti-aliasing with h_convolution_scaling, which is otherwise 1
 
 
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
@@ -271,7 +304,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 // Main rasterization method. Collaboratively works on one tile per
 // block, each thread treats one pixel. Alternates between fetching 
 // and rasterizing data.
-template <uint32_t CHANNELS>
+template <uint32_t CHANNELS> // each thread treat 1 pixel = 256 threads per block
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderCUDA(
 	const uint2* __restrict__ ranges,
