@@ -52,11 +52,7 @@ class GaussianModel:
         self.inverse_opacity_activation = inverse_sigmoid
 
         # what is rotational_activation? Normalizing the quaternions
-<<<<<<< Updated upstream
         # Unit quaternion represent pure rotation in 3D space; also compact and numerically stable representation of rotation
-=======
-        # Unit quaternion represent purerotation in 3D space; also compact and numerically stable representation of rotation
->>>>>>> Stashed changes
         # avoid gimbal lock problem
         # Wiki: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation ()
         self.rotation_activation = torch.nn.functional.normalize
