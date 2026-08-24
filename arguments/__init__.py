@@ -106,17 +106,18 @@ class OptimizationParams(ParamGroup):
         self.position_lr_final = 0.0000016 # lr for 3D gaussian means at end (low at end)
         self.position_lr_delay_mult = 0.01 # this is the decay multiplier
         # for decay function, look at self.xyz_scheduler_args in gaussian_model.py and utils/general_utils.py
+        
         self.position_lr_max_steps = 30_000 # heuristic setting across all experiments in paper, allow more steps to better optimize
         self.feature_lr = 0.0025 # learning rate for the SH parameters, separate rates for different degrees
         self.opacity_lr = 0.025 # heuristic setting of opacity
         self.scaling_lr = 0.005 # heuristic setting of scaling vector of covariance matrix
-        self.rotation_lr = 0.001 # heuristic setting of quaternion vector of covariance matrix
+        self.rotation_lr = 0.001 # heuristic setting of quaternion vector of covariance matrix -
         
         # Exposure compensation learning rate parameters (additional implementation)
-        self.exposure_lr_init = 0.01
-        self.exposure_lr_final = 0.001
-        self.exposure_lr_delay_steps = 0
-        self.exposure_lr_delay_mult = 0.0
+        # self.exposure_lr_init = 0.01
+        # self.exposure_lr_final = 0.001
+        # self.exposure_lr_delay_steps = 0
+        # self.exposure_lr_delay_mult = 0.0
         # deals with exposure changes in the different input images
         
         
@@ -127,8 +128,11 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500 # start densifying after 500 iterations, every 100 iterations, until 15K iterations
         self.densify_until_iter = 15_000 # densify until 15K iterations, then stop densifying
         self.densify_grad_threshold = 0.0002 # max_grad: 0.0002 from code and paper
-        self.depth_l1_weight_init = 1.0
-        self.depth_l1_weight_final = 0.01
+        
+        # Depth Regularization
+        # self.depth_l1_weight_init = 1.0
+        # self.depth_l1_weight_final = 0.01
+        
         self.random_background = False # set to False 
         self.optimizer_type = "default" # ADAM
         super().__init__(parser, "Optimization Parameters")

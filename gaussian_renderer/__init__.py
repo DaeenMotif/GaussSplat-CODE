@@ -50,8 +50,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         tanfovy=tanfovy,
         bg=bg_color,
         scale_modifier=scaling_modifier, # 1.0
-        viewmatrix=viewpoint_camera.world_view_transform,
-        projmatrix=viewpoint_camera.full_proj_transform,
+        viewmatrix=viewpoint_camera.world_view_transform, # #  4X4 world to camera viewpoint matrix T, but this matrix looks transposed
+        projmatrix=viewpoint_camera.full_proj_transform, # 4X4 world-to-Screenspace transform
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center, # tensor is size [3]
         prefiltered=False,

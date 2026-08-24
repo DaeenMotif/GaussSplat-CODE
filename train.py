@@ -20,7 +20,7 @@ from utils.general_utils import safe_state, get_expon_lr_func
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
-from argparse import ArgumentParser, Namespace # Simple object for storing attributes
+from argparse import ArgumentParser, Namespace # ArgumentParser: object for storing attributes
 from arguments import ModelParams, PipelineParams, OptimizationParams
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -30,7 +30,7 @@ except ImportError:
 
 try:
     from fused_ssim import fused_ssim
-    FUSED_SSIM_AVAILABLE = True # FUSED SSIM USED
+    FUSED_SSIM_AVAILABLE = True ## FUSED SSIM USED
 except:
     FUSED_SSIM_AVAILABLE = False 
 
@@ -133,7 +133,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # unlike L2, L1 gives a stable direct image-space error, and doesnt penalize large errors too much or ignore small error
         # SSIM adds sensitivity to local structure, edges, and region consistency
         # Together, they provide a better training signal for reconstruction quality than alternatives like L2
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value) # (1-ssim_value) is structural disimilarity: which is penalized
 
         # Depth regularization
         Ll1depth_pure = 0.0

@@ -8,7 +8,7 @@
  *
  * For inquiries contact  george.drettakis@inria.fr
  */
-
+#include <iostream>
 #include "forward.h"
 #include "auxiliary.h" // contains the precalculated orthonormalized SH coefficients
 #include <cooperative_groups.h>
@@ -17,40 +17,40 @@ namespace cg = cooperative_groups;
 
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
-// this code is the same logic as utils/sh_utils.py and gaussian_renderer/__init__.py
+//  this code is the same logic as utils/sh_utils.py and gaussian_renderer/__init__.py
 __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const glm::vec3* means, glm::vec3 campos, const float* shs, bool* clamped)
 {
 	// The implementation is loosely based on code for 
 	// "Differentiable Point-Based Radiance Fields for 
 	// Efficient View Synthesis" by Zhang et al. (2022) https://github.com/sjtuzq/point-radiance/blob/main/modules/sh.py
-	glm::vec3 pos = means[idx]; // get 3D gaussian mean by indexing the point
-	glm::vec3 dir = pos - campos; // campos is camera center: dir = center of 3D Gaussian - center of cam-center  {vec c = vec a - vec b}
+	glm::vec3 pos = means[idx]; //  Use the idx to get the Gaussian Position
+	glm::vec3 dir = pos - campos; //campos is camera center: dir = center of 3D Gaussian - center of cam-center  {vec c = vec a - vec b}
 	
-	// Code from sh_utils.py
-	// assert deg <= 4 and deg >= 0
-    // coeff = (deg + 1) ** 2
-    // assert sh.shape[-1] >= coeff
-    // result = C0 * sh[..., 0]
-    // if deg > 0:
-    //     x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3] 
-    //     result = (result -
-    //             C1 * y * sh[..., 1] +
-    //             C1 * z * sh[..., 2] -
-    //             C1 * x * sh[..., 3])	
+	//  Code from sh_utils.py
+	//  assert deg <= 4 and deg >= 0
+    //  coeff = (deg + 1) ** 2
+    //  assert sh.shape[-1] >= coeff
+    //  result = C0 * sh[..., 0]
+    //  if deg > 0:
+    //      x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3] 
+    //      result = (result -
+    //              C1 * y * sh[..., 1] +
+    //              C1 * z * sh[..., 2] -
+    //              C1 * x * sh[..., 3])	
 
 
 
 
-	dir = dir / glm::length(dir); // normalize viewing direction vector
+	dir = dir / glm::length(dir); //  normalize viewing direction vector
 
 	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // TODO: Check
 	glm::vec3 result = SH_C0 * sh[0];
 
 	if (deg > 0)
 	{
-		float x = dir.x; // separate the normalized viewing direction components x
-		float y = dir.y; // separate the normalized viewing direction components y
-		float z = dir.z; // separate the normalized viewing direction components z
+		float x = dir.x; //  separate the normalized viewing direction components x
+		float y = dir.y; //  separate the normalized viewing direction components y
+		float z = dir.z; //  separate the normalized viewing direction components z
 		result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3];
 
 		if (deg > 1)
@@ -100,27 +100,28 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 	// Cov2D = J * W * Cov3D * transpose (W) * transpose(J)
 	float3 t = transformPoint4x3(mean, viewmatrix); // take the xyz location of 3D gaussians and transform to camera view (3D space)
 
-	const float limx = 1.3f * tan_fovx; // tan_fovx = X/Z
-	const float limy = 1.3f * tan_fovy; // tan_fovx = X/Z; gaussians near camera plane 
+	const float limx = 1.3f * tan_fovx; //  tan_fovx = X/Z
+	const float limy = 1.3f * tan_fovy; //  tan_fovy = Y/Z; gaussians near camera plane 
 	const float txtz = t.x / t.z;
 	const float tytz = t.y / t.z;
 	t.x = min(limx, max(-limx, txtz)) * t.z;
 	t.y = min(limy, max(-limy, tytz)) * t.z;
 	/*
-		J = [[f_x/z   0    -f_x * x /z**2]
-             [  0   f_y/z   -f_y * y /z**2]]
+		J = [[f_x/z   0     -f_x * x /z**2]
+             [  0   f_y/z   -f_y * y /z**2]
+			 [  0     0           0      ]]
 	
 	*/
 	glm::mat3 J = glm::mat3( 
 		focal_x / t.z, 0.0f, -(focal_x * t.x) / (t.z * t.z),
 		0.0f, focal_y / t.z, -(focal_y * t.y) / (t.z * t.z),
-		0, 0, 0); // 3x3 glm matrix for jacobian : a transformation from cameras 3Dspace to ray space {projective mapping}
+		0, 0, 0); //  3x3 glm matrix for jacobian : a transformation from cameras 3Dspace to ray space {projective mapping}
 	
 	// viewmatrix is viewing transfomration:from world sys to camera's own 3D system, viewmatrix is 4X4
 	glm::mat3 W = glm::mat3(
 		viewmatrix[0], viewmatrix[4], viewmatrix[8],
 		viewmatrix[1], viewmatrix[5], viewmatrix[9],
-		viewmatrix[2], viewmatrix[6], viewmatrix[10]); // column-major [V00, V10, V20, V01, V11, V21, V02, V12, V22] (arranged like an array)
+		viewmatrix[2], viewmatrix[6], viewmatrix[10]); //  column-major [V00, V10, V20, V01, V11, V21, V02, V12, V22] (arranged like an array)
 
 	glm::mat3 T = W * J; // T = Jacobian * viewing transformation (glm is right multiplications)
 
@@ -131,7 +132,7 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 
 	glm::mat3 cov = glm::transpose(T) * glm::transpose(Vrk) * T;
 
-	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) }; // 2D covar is 2x2 MAT, and also +ve-semi-definite so entry [1][0] ignored
+	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) };  // 2D covar is 2x2 MAT, and also +ve-semi-definite so entry [1][0] ignored
 }
 
 // Forward method for converting scale and rotation properties of each
@@ -186,11 +187,11 @@ __global__ void preprocessCUDA(int P, int D, int M, // D is degree of sH, M is m
 	bool* clamped,
 	const float* cov3D_precomp, // precomputed Cov3D (if exists) of each 3D gaussian
 	const float* colors_precomp, // precomputed colors (if exists) of each 3D gaussian
-	const float* viewmatrix, // 4X4 3dworld to 3dcamera viewmatrix [R|t] stored as an array 
+	const float* viewmatrix, // 4X4 3dworld to 3dcamera viewmatrix stored as an array 
 	const float* projmatrix, // 4X4 (world-to-viewspace) matrix
 	const glm::vec3* cam_pos, // xyz cam center
 	const int W, int H, // Img width and height in pixels
-	const float tan_fovx, float tan_fovy, // tan of field of views
+	const float tan_fovx, float tan_fovy, // tangent of field of views
 	const float focal_x, float focal_y, // focal lengths of image
 	int* radii, // TODO
 	float2* points_xy_image, // TODO
@@ -281,7 +282,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // D is degree of sH, M is m
 	// spherical harmonics coefficients to RGB color.
 	if (colors_precomp == nullptr)
 	{
-		glm::vec3 result = computeColorFromSH(idx, D, M, (glm::vec3*)orig_points, *cam_pos, shs, clamped);
+		glm::vec3 result = computeColorFromSH(idx, D, M, (glm::vec3*)orig_points, *cam_pos, shs, clamped); // steps to computing rgb colors using SH. Key 
 		rgb[idx * C + 0] = result.x;
 		rgb[idx * C + 1] = result.y;
 		rgb[idx * C + 2] = result.z;
@@ -291,7 +292,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // D is degree of sH, M is m
 	depths[idx] = p_view.z;  // The depth in camera space (used as the sorting key later)
 	radii[idx] = my_radius; // The radius is in pixel
 	points_xy_image[idx] = point_image; //center of the Gaussian in 2D pixel coordinate
-	// Inverse 2D covariance and opacity neatly pack into one float4
+	
 	float opacity = opacities[idx];
 
 
@@ -309,7 +310,7 @@ __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderCUDA(
 	const uint2* __restrict__ ranges,
 	const uint32_t* __restrict__ point_list,
-	int W, int H,
+	int W, int H, // img W, H
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
 	const float4* __restrict__ conic_opacity,
@@ -321,18 +322,19 @@ renderCUDA(
 	float* __restrict__ invdepth)
 {
 	// Identify current tile and associated min/max pixel range.
-	auto block = cg::this_thread_block();
-	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
-	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };
-	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) };
-	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y };
-	uint32_t pix_id = W * pix.y + pix.x;
-	float2 pixf = { (float)pix.x, (float)pix.y };
+	auto block = cg::this_thread_block(); // current tile treats one pixel
+	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X; // e.g  W=48, (48+16-1)/16 = 3
+	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y }; // get the min pixel location (0,0)
+	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) }; // the final pixel locations (16,16)
+	
+	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y }; // current thread indexed pixel location
+	uint32_t pix_id = W * pix.y + pix.x; // pixel id 
+	float2 pixf = { (float)pix.x, (float)pix.y }; // float pixel
 
 	// Check if this thread is associated with a valid pixel or outside.
-	bool inside = pix.x < W&& pix.y < H;
+	bool inside = pix.x < W&& pix.y < H; // check thread pixel location is valied
 	// Done threads can help with fetching, but don't rasterize
-	bool done = !inside;
+	bool done = !inside; // set done to false when inside r thread in a valid pixel
 
 	// Load start/end range of IDs to process in bit sorted list.
 	uint2 range = ranges[block.group_index().y * horizontal_blocks + block.group_index().x];

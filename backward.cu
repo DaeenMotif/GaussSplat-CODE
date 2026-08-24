@@ -25,9 +25,9 @@ __device__ void computeColorFromSH(int idx, int deg, int max_coeffs, const glm::
 	// Compute intermediate values, as it is done during forward
 	glm::vec3 pos = means[idx];
 	glm::vec3 dir_orig = pos - campos;
-	glm::vec3 dir = dir_orig / glm::length(dir_orig);  // Normalized view direction
+	glm::vec3 dir = dir_orig / glm::length(dir_orig);  //  Normalized view direction
 
-	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // pointer to sh coefficients for this specific idx Gaussian
+	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; //  pointer to sh coefficients for this specific idx Gaussian 
 
 	// Use PyTorch rule for clamping: if clamping was applied,
 	// gradient becomes 0.

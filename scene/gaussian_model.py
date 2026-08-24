@@ -52,7 +52,11 @@ class GaussianModel:
         self.inverse_opacity_activation = inverse_sigmoid
 
         # what is rotational_activation? Normalizing the quaternions
+<<<<<<< Updated upstream
         # Unit quaternion represent pure rotation in 3D space; also compact and numerically stable representation of rotation
+=======
+        # Unit quaternion represent purerotation in 3D space; also compact and numerically stable representation of rotation
+>>>>>>> Stashed changes
         # avoid gimbal lock problem
         # Wiki: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation ()
         self.rotation_activation = torch.nn.functional.normalize
@@ -161,7 +165,7 @@ class GaussianModel:
             self.active_sh_degree += 1
 
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
-        self.spatial_lr_scale = spatial_lr_scale # spatial_lr_scale = 5.779 for T&T truck
+        self.spatial_lr_scale = spatial_lr_scale # spatial_lr_scale = 5.779 for T&T truck, spatial scale measured using the distance be
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda() # consttuct tensor of 3D points from point cloud
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) # pcd colors are normalized rgb [0,1]
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda() # shape features: [N, 3, 16]
@@ -170,7 +174,7 @@ class GaussianModel:
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0]) # the number of points in the initial point cloud
 
-        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001) # mean squared distance using KNN
+        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001) # mean squared distance using KNN from closest 3 points (paper)
         scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3) # Start as isotropic splats (uniform scale in all direction)
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1 # Initialize as identity quaternion (1, 0, 0, 0)
@@ -181,7 +185,7 @@ class GaussianModel:
         # opacities now all are init to -2.1972246170043945; sigmoid of -2.1972246170043945 is 0.1, which is the initial opacity value for all gaussians
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
-        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True)) # separated from dc to learn at diff rate
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True)) # separated from _features_dc to learn at different rate
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
@@ -266,7 +270,7 @@ class GaussianModel:
 
         xyz = self._xyz.detach().cpu().numpy() # detach 3D gaussian position tensor from computation graph (no grad)
         normals = np.zeros_like(xyz) # init normals to 0 for 3D Gaussians
-        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() # detach the cr channel; a
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() # detach the diffuse color channel;
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() # detach the residual sh channel
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()

@@ -46,11 +46,11 @@ class SceneInfo(NamedTuple): # The scene info: point cloud with its list of Came
     is_nerf_synthetic: bool
 
 def getNerfppNorm(cam_info):
-    def get_center_and_diag(cam_centers):
+    def get_center_and_diag(cam_centers): # get the camera 3D locations
         cam_centers = np.hstack(cam_centers)
         avg_cam_center = np.mean(cam_centers, axis=1, keepdims=True)
         center = avg_cam_center
-        dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True)
+        dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True) # get the largest distance between center and some camera
         diagonal = np.max(dist)
         return center.flatten(), diagonal
 
@@ -62,9 +62,9 @@ def getNerfppNorm(cam_info):
         cam_centers.append(C2W[:3, 3:4])
 
     center, diagonal = get_center_and_diag(cam_centers)
-    radius = diagonal * 1.1
+    radius = diagonal * 1.1 # multiply by 1.1 
 
-    translate = -center
+    translate = -center # way of finding how much to translate to move to world center
 
     return {"translate": translate, "radius": radius}
 
