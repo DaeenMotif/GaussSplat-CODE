@@ -25,25 +25,10 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 	// Efficient View Synthesis" by Zhang et al. (2022) https://github.com/sjtuzq/point-radiance/blob/main/modules/sh.py
 	glm::vec3 pos = means[idx]; // get 3D gaussian mean by indexing the point
 	glm::vec3 dir = pos - campos; // campos is camera center: dir = center of 3D Gaussian - center of cam-center  {vec c = vec a - vec b}
-	
-	// Code from sh_utils.py
-	// assert deg <= 4 and deg >= 0
-    // coeff = (deg + 1) ** 2
-    // assert sh.shape[-1] >= coeff
-    // result = C0 * sh[..., 0]
-    // if deg > 0:
-    //     x, y, z = dirs[..., 0:1], dirs[..., 1:2], dirs[..., 2:3] 
-    //     result = (result -
-    //             C1 * y * sh[..., 1] +
-    //             C1 * z * sh[..., 2] -
-    //             C1 * x * sh[..., 3])	
-
-
-
 
 	dir = dir / glm::length(dir); // normalize viewing direction vector
 
-	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs;
+	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // index the specific gaussians sh_learned_coeff
 	glm::vec3 result = SH_C0 * sh[0];
 
 	if (deg > 0)
@@ -51,7 +36,7 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 		float x = dir.x; // separate the normalized viewing direction components x
 		float y = dir.y; // separate the normalized viewing direction components y
 		float z = dir.z; // separate the normalized viewing direction components z
-		result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3]; // sh constant * view_dir * weight
+		result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3]; //constant * view_dir * sh_learned_coeff
 
 		if (deg > 1)
 		{
@@ -78,12 +63,13 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 		}
 	}
 	// From sh_utils.py
-	// def SH2RGB(sh):
-    //    return sh * C0 + 0.5
+	// we multiply the learnt coefficient sh with base 0 constant & add 0.5
+	// a 0 sH (no learnt color) is gray rather than black because of adding 0.5
 	result += 0.5f; // here results is sh * C0
 
 	// RGB colors are clamped to positive values. If values are
 	// clamped, we need to keep track of this for the backward pass
+	// color = C0 * f_dc + 0.5 is affine, ∂color/∂f_dc = C0 regardless of the offset.
 	clamped[3 * idx + 0] = (result.x < 0);
 	clamped[3 * idx + 1] = (result.y < 0);
 	clamped[3 * idx + 2] = (result.z < 0);
@@ -201,7 +187,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	float* rgb, // Each gaussian's RGB colors
 	float4* conic_opacity, // the inverse symmtric cov2D matrix (xx,xy,yy) along with the opacity 
 	const dim3 grid,
-	uint32_t* tiles_touched,
+	uint32_t* tiles_touched, // for each indexed gaussian get the tileIDs it overlaps
 	bool prefiltered, // check if gaussian is already filtered for frustum-culling
 	bool antialiasing)
 {
@@ -221,8 +207,8 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 
 	// Transform point by projecting
 	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] }; // 3D mean of gaussians; array is flattened so idx*3
-	float4 p_hom = transformPoint4x4(p_orig, projmatrix); // transform the 3d mean from world to 2D viewspace (NDC coords) [-1,1]
-	float p_w = 1.0f / (p_hom.w + 0.0000001f); // avoid 0-division error
+	float4 p_hom = transformPoint4x4(p_orig, projmatrix); // transform the 3d mean from world to 2D viewspace homogenous coordinates
+	float p_w = 1.0f / (p_hom.w + 0.0000001f); // convert to  (NDC coords) [-1,1] and avoid 0-division error
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
 
 	// If 3D covariance matrix is precomputed, use it, otherwise compute
@@ -273,7 +259,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det)); // eigenvalue2 radii of the projected ellipsis along major/minor axis
 	// 3 times sqrt of largest eignvalue represents 3 standard deviation = covers 99.7% of projected 2D gaussian distribution
 	float my_radius = ceil(3.f * sqrt(max(lambda1, lambda2))); // compute the extent in screenspace
-	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) }; // convert NDC -> pixel coord of gaussian
+	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) }; // convert NDC -> pixel space for gaussians
 	uint2 rect_min, rect_max; // initialize the rectangle
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
 	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
@@ -287,7 +273,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 		rgb[idx * C + 0] = result.x;
 		rgb[idx * C + 1] = result.y;
 		rgb[idx * C + 2] = result.z;
-	}
+	} // compute per channel using per-channel resultant SH coefficient effect 
 
 	// Store some useful helper data for the next steps.
 	depths[idx] = p_view.z;  // The depth in camera space (used as the sorting key later)
@@ -306,7 +292,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 // Main rasterization method. Collaboratively works on one tile per
 // block, each thread treats one pixel. Alternates between fetching 
 // and rasterizing data.
-template <uint32_t CHANNELS> // each thread treat 1 pixel = 256 threads per block
+template <uint32_t CHANNELS> // each thread treat 1 tile
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderCUDA(
 	const uint2* __restrict__ ranges,
@@ -381,9 +367,9 @@ renderCUDA(
 
 			// Resample using conic matrix (cf. "Surface 
 			// Splatting" by Zwicker et al., 2001)
-			float2 xy = collected_xy[j];
-			float2 d = { xy.x - pixf.x, xy.y - pixf.y };
-			float4 con_o = collected_conic_opacity[j];
+			float2 xy = collected_xy[j]; //  xy: the 2d coord of the Gaussian center
+			float2 d = { xy.x - pixf.x, xy.y - pixf.y }; // pixf: the 2d coord of the current pixel; 
+			float4 con_o = collected_conic_opacity[j]; // // con_o: inv cov2d (x,y,z), opacity (w)
 			float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
 			if (power > 0.0f)
 				continue;

@@ -109,8 +109,8 @@ class OptimizationParams(ParamGroup):
         self.position_lr_max_steps = 30_000 # heuristic setting across all experiments in paper, allow more steps to better optimize
         self.feature_lr = 0.0025 # learning rate for the SH parameters, separate rates for different degrees
         self.opacity_lr = 0.025 # heuristic setting of opacity
-        self.scaling_lr = 0.005 # heuristic setting of scaling vector of covariance matrix
-        self.rotation_lr = 0.001 # heuristic setting of quaternion vector of covariance matrix
+        self.scaling_lr = 0.005 # high scaling learning rate changes can make covariance matrix unstable
+        self.rotation_lr = 0.001 # unit normalized value for quaternion, also high learning rate can cause noisy rotation learning
         
         # Exposure compensation learning rate parameters (additional implementation)
         self.exposure_lr_init = 0.01

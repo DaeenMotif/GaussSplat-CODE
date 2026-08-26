@@ -197,7 +197,7 @@ CudaRasterizer::BinningState CudaRasterizer::BinningState::fromChunk(char*& chun
 	obtain(chunk, binning.point_list_keys_unsorted, P, 128);
 	cub::DeviceRadixSort::SortPairs(
 		nullptr, binning.sorting_size,
-		binning.point_list_keys_unsorted, binning.point_list_keys,
+		binning.point_list_keys_unsorted, binning.point_list_keys, // unsorted point_list_keys are the unsorted gaussians
 		binning.point_list_unsorted, binning.point_list, P);
 	obtain(chunk, binning.list_sorting_space, binning.sorting_size, 128);
 	return binning;

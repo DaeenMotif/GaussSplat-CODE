@@ -55,7 +55,7 @@ if not args.skip_matching:
     ### Bundle adjustment
     # The default Mapper tolerance is unnecessarily large,
     # decreasing it speeds up bundle adjustment steps.
-    # When we perform colmap, what is this mapper.ba_global function tolerance and why is it 0.000001? (Check colmap documentation)
+    # When we perform colmap, what is this mapper.ba_global function tolerance and why is it 0.000001? Haven't found the reason yet.
     mapper_cmd = (colmap_command + " mapper \
         --database_path " + args.source_path + "/distorted/database.db \
         --image_path "  + args.source_path + "/input \
