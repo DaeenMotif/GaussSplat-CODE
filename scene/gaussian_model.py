@@ -28,9 +28,9 @@ except:
     pass
 
 class GaussianModel:
-    # Purpose of setup functions: Activation functions for gaussians Attributes
-    # Achieve Non-Linearity, and based on different attributes's value ranges
-    # scaling: needs to be +ve, so +ve activation
+    # Purpose of setup functions: set activation functions for gaussian attributes
+    # Achieve Non-Linearity, and based on different attributes's value ranges, diff activation functions
+    # scaling: needs to be +ve, so exp activation ensure +ve value
     # save with opacity that dwell in [0,1] range, so increase of stronger gradients, sigmoid is chosen
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation): # Implementation exists in the CUDA Rasterization codefile forward.cu This is only used if the argument compute_cov3D_python (from arguments/__init__.py) is set to True.
@@ -42,12 +42,12 @@ class GaussianModel:
             print(symm)
             return symm # symm is a (N,6) vector where 6 are the upper-diagonal entries of the cov3D
         
-        # exponential activation for scaling, to ensure it is positive and smooth
+        # exponential activation for scaling (maps it to (0, inf)), to ensure it is positive and smooth
         self.scaling_activation = torch.exp
         # log scale applied to scale vector at new initialization during splitting
         self.scaling_inverse_activation = torch.log
 
-        self.covariance_activation = build_covariance_from_scaling_rotation # this function tied to get_covariance() in line 
+        self.covariance_activation = build_covariance_from_scaling_rotation
 
         # S5.1: sigmoid activation for opacity, to ensure it is in [0,1)
         # Obtain smooth gradients (S-shaped curve and continuous)
@@ -166,8 +166,8 @@ class GaussianModel:
 
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale # spatial_lr_scale = 5.779 for T&T truck, spatial scale obtained getNerfppNorm in dataset_readers.py
-        fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda() # construct tensor of 3D points from point cloud
-        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) # convert the 3-ch RGB from SfM points to 3-ch sH value
+        fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda() # construct tensor of 3D points obtained from fusing multiple 2D observations in COLMAP to 3D
+        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) # fused color for points taken from multiple imgs; convert the 3-ch RGB from SfM points to 3-ch sH value
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda() # shape features: [N, 3, 16]
         features[:, :3, 0 ] = fused_color # only set the 0th idx (base color) of 3d Gaussians to SfM PointCloud color
         features[:, 3:, 1:] = 0.0 # this line is redundant, alrdy initialized to 0.0
@@ -200,10 +200,13 @@ class GaussianModel:
 
         '''
             Different Parameters have different learning rates
-            xyz learning scale includes to the scene scale factors
-            _features_dc: diffuse color (SH base = 0)
-            _features_rest: higher SH bases (1,2,3): learning is set slower to prevent
-            Mentioned in paper: sH coeff sensitive to the lack of angular information
+            xyz lr should be relative to scene size so it is multiplied by the scene scale value (tested scene has this value = 5.7)
+            self.opacity_lr = 0.025 | self.feature_lr = 0.0025 | self.scaling_lr = 0.005 | self.rotation_lr = 0.001 
+            The features_dc lr rate is for view-independent base color
+            Higher-order sH bases, for view-dependent colors, are senistive to limited camera observation, so their lr is divided by 20
+            This helps reduce effects of unstable appearance optimization; first learning basic appearance is important, also why sH are activated every 1K iterations
+            The scaling lr rate is lower to small changes in scale, and also rotation is even smaller, as quaternions are unit-vectors.
+            High rotational lr can cause big geometric effects of elongated anistropic splats
         '''
         
         
