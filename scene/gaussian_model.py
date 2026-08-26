@@ -28,7 +28,10 @@ except:
     pass
 
 class GaussianModel:
-
+    # Purpose of setup functions: Activation functions for gaussians Attributes
+    # Achieve Non-Linearity, and based on different attributes's value ranges
+    # scaling: needs to be +ve, so +ve activation
+    # save with opacity that dwell in [0,1] range, so increase of stronger gradients, sigmoid is chosen
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation): # Implementation exists in the CUDA Rasterization codefile forward.cu This is only used if the argument compute_cov3D_python (from arguments/__init__.py) is set to True.
             # Covariance  = RSS'R' wher S' is S transpose
@@ -75,7 +78,7 @@ class GaussianModel:
         self.denom = torch.empty(0) # counter for a 2D/3D gaussian for gradient accumulation
         self.optimizer = None
         self.percent_dense = 0
-        self.spatial_lr_scale = 0
+        self.spatial_lr_scale = 0 # scene dependent scale that affects positional learning rate
         self.setup_functions()
 
     # for saving to checkpoint, check train.py line:201
@@ -148,7 +151,7 @@ class GaussianModel:
         return self._exposure
 
     def get_exposure_from_name(self, image_name):
-        if self.pretrained_exposures is None:
+        if self.pretrained_exposures is None: # 
             return self._exposure[self.exposure_mapping[image_name]] # return the learned exposure
         else:
             return self.pretrained_exposures[image_name]
@@ -222,7 +225,7 @@ class GaussianModel:
                 # A special version of the rasterizer is required to enable sparse adam
                 self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
 
-        self.exposure_optimizer = torch.optim.Adam([self._exposure])
+        self.exposure_optimizer = torch.optim.Adam([self._exposure]) # model creates a dedicated optimizer for exposure with learning rate decay scheduler too
 
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
@@ -236,8 +239,8 @@ class GaussianModel:
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
-        if self.pretrained_exposures is None:
-            for param_group in self.exposure_optimizer.param_groups:
+        if self.pretrained_exposures is None: # Given that we don't use pretrained exposure
+            for param_group in self.exposure_optimizer.param_groups: # We learn the exposure matrix
                 param_group['lr'] = self.exposure_scheduler_args(iteration)
 
         for param_group in self.optimizer.param_groups:
@@ -288,7 +291,7 @@ class GaussianModel:
 
     def load_ply(self, path, use_train_test_exp = False): # loading a pretrained point cloud from 3DGS
         plydata = PlyData.read(path)
-        if use_train_test_exp: # exposure flag: Set False
+        if use_train_test_exp: # if exposure is used, this flag is set to True
             exposure_file = os.path.join(os.path.dirname(path), os.pardir, os.pardir, "exposure.json")
             if os.path.exists(exposure_file):
                 with open(exposure_file, "r") as f:

@@ -142,7 +142,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # Apply exposure to rendered image (training only)
     if use_trained_exp:
         exposure = pc.get_exposure_from_name(viewpoint_camera.image_name) # return learnt exposure
-        # multiply each rendered image with its exposure and exposure bias
+        # Exposure is the amount of light accumulated at the image plane during a single capture, set by the lens aperture, the exposure time, and the scene's luminance.
+        # multiply each rendered image with its exposure_scaler and add exposure bias
+        # the learnt scale-shift operation on the RGB channel probably acts corrector to shift color and brightness 
         rendered_image = torch.matmul(rendered_image.permute(1, 2, 0), exposure[:3, :3]).permute(2, 0, 1) + exposure[:3, 3,   None, None] 
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.

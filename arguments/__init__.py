@@ -16,7 +16,6 @@ import os
 class GroupParams:
     pass
 
-# In train.py, 4 parser groups are aggragated
 class ParamGroup:
     def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
         group = parser.add_argument_group(name) # create a custom argument group with a name
