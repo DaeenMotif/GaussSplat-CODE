@@ -24,7 +24,7 @@ def PILtoTorch(pil_image, resolution):
     resized_image_PIL = pil_image.resize(resolution) # resize to a specific resolution
     resized_image = torch.from_numpy(np.array(resized_image_PIL)) / 255.0 # normalize rgb values
     if len(resized_image.shape) == 3:
-        return resized_image.permute(2, 0, 1) # permute: (C, 
+        return resized_image.permute(2, 0, 1)
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
 
@@ -65,8 +65,8 @@ def get_expon_lr_func(
 
     return helper
 
-def strip_lowerdiag(L): # this function not used: but is the same CUDA implementation, selecting only right upper triangular entries
-    uncertainty = torch.zeros((L.shape[0], 6), dtype=torch.float, device="cuda") # makes it positive semi-definite 
+def strip_lowerdiag(L): # Implementation exists in the CUDA Rasterization codefile forward.cu This is only used if the argument compute_cov3D_python (from arguments/__init__.py) is set to True.
+    uncertainty = torch.zeros((L.shape[0], 6), dtype=torch.float, device="cuda") # selecting only upper-triangular entries since symmtrey
 
     uncertainty[:, 0] = L[:, 0, 0]
     uncertainty[:, 1] = L[:, 0, 1]
@@ -74,10 +74,10 @@ def strip_lowerdiag(L): # this function not used: but is the same CUDA implement
     uncertainty[:, 3] = L[:, 1, 1]
     uncertainty[:, 4] = L[:, 1, 2]
     uncertainty[:, 5] = L[:, 2, 2]
-    return uncertainty
+    return uncertainty # Return the cov3D as (N,6) vector containing upper triangular entries
 
-def strip_symmetric(sym):  # Make symmetric
-    return strip_lowerdiag(sym)
+def strip_symmetric(sym): # input to the function is symmetric covariance matrix
+    return strip_lowerdiag(sym) # strip_lowerdiag is the function above
 
 def build_rotation(r):
     # r is a N,4 dimensional vector: quaternion (r,x,y,z)
@@ -104,14 +104,14 @@ def build_rotation(r):
     R[:, 2, 2] = 1 - 2 * (x*x + y*y)
     return R
 
-def build_scaling_rotation(s, r): # Why function not used? TODO: Check
-    L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
-    R = build_rotation(r)
-
-    L[:,0,0] = s[:,0]
+def build_scaling_rotation(s, r): # Implementation exists in the CUDA Rasterization codefile forward.cu This is only used if the argument compute_cov3D_python (from arguments/__init__.py) is set to True.
+    L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda") # (N,3,3)
+    R = build_rotation(r) # R = rotation matrix (N,3,3)
+    # make 3x3 diagonal scaling matrix S (here we name it L) (scaling matrix is diagonal)
+    L[:,0,0] = s[:,0] # s is a vector (N,3) so diag 1st entry is 1st entry of vector
     L[:,1,1] = s[:,1]
     L[:,2,2] = s[:,2]
-
+    # L = R@S
     L = R @ L
     return L
 

@@ -19,7 +19,6 @@ WARNED = False
 # core function that builds the camera viewpoints in train.py
 def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dataset):
     image = Image.open(cam_info.image_path)
-    # in default case, we do not use the depth
     if cam_info.depth_path != "":
         try:
             if is_nerf_synthetic:
@@ -39,7 +38,7 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dat
     else:
         invdepthmap = None
         
-    orig_w, orig_h = image.size # orig_h = 545, orig_w = 977 
+    orig_w, orig_h = image.size # orig_h = 545, orig_w = 977 (this varies with image size)
     if args.resolution in [1, 2, 4, 8]: # arg.resolution = -1
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
     else:  # should be a type that converts to float
@@ -74,7 +73,7 @@ def cameraList_from_camInfos(cam_infos, resolution_scale, args, is_nerf_syntheti
 
     return camera_list
 
-def camera_to_JSON(id, camera : Camera): # TODO: Check
+def camera_to_JSON(id, camera : Camera):
     Rt = np.zeros((4, 4))
     Rt[:3, :3] = camera.R.transpose()
     Rt[:3, 3] = camera.T

@@ -47,7 +47,7 @@ class Camera(nn.Module):
         else: 
             self.alpha_mask = torch.ones_like(resized_image_rgb[0:1, ...].to(self.data_device)) # 1D alpha mask of size [1, H, W] with 1s
 
-        if train_test_exp and is_test_view:
+        if train_test_exp and is_test_view: # if exposure is used
             if is_test_dataset:
                 self.alpha_mask[..., :self.alpha_mask.shape[-1] // 2] = 0
             else:

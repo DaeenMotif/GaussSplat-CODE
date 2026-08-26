@@ -41,7 +41,7 @@ class SceneInfo(NamedTuple): # The scene info: point cloud with its list of Came
     point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
-    nerf_normalization: dict # This nerf_normalization is important: have to do with scene_scale TODO: Analysis
+    nerf_normalization: dict # nerf normalization determines the scene scale value
     ply_path: str
     is_nerf_synthetic: bool
 
@@ -64,7 +64,7 @@ def getNerfppNorm(cam_info):
     center, diagonal = get_center_and_diag(cam_centers)
     radius = diagonal * 1.1 # multiply by 1.1 
 
-    translate = -center # way of finding how much to translate to move to world center
+    translate = -center # how much to translate camera to move to world center
 
     return {"translate": translate, "radius": radius}
 
@@ -77,13 +77,13 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
         sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
         sys.stdout.flush()
 
-        extr = cam_extrinsics[key]
-        intr = cam_intrinsics[extr.camera_id]
+        extr = cam_extrinsics[key] # get the BaseImage ID from cam_extrinsics
+        intr = cam_intrinsics[extr.camera_id] # use it to extract specific 'Camera'  corresponding to BaseImage
         height = intr.height
         width = intr.width
 
         uid = intr.id
-        R = np.transpose(qvec2rotmat(extr.qvec)) # in colmap, when we get the rotation matrix for pose, we transpose it. (TODO: ANALYSIS NEEDED)
+        R = np.transpose(qvec2rotmat(extr.qvec))
         T = np.array(extr.tvec)
 
         if intr.model=="SIMPLE_PINHOLE": # for square images
@@ -121,9 +121,9 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
 def fetchPly(path): # reading the ply pointcloud data
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
-    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T # why Transposed? TODO: Check
+    positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T # are they zero? TODO: Check
+    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 def storePly(path, xyz, rgb):
@@ -132,7 +132,7 @@ def storePly(path, xyz, rgb):
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
     
-    normals = np.zeros_like(xyz)
+    normals = np.zeros_like(xyz) # set normals to zeros
 
     elements = np.empty(xyz.shape[0], dtype=dtype)
     attributes = np.concatenate((xyz, normals, rgb), axis=1)
@@ -147,13 +147,13 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
     try: # our colmapdata exists in .bin format
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
-        cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file) # TODO: Check 
-        cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file) # TODO: Check 
+        cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
+        cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
     except:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.txt")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.txt")
-        cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
-        cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
+        cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file) # get BaseImage datastruct ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"]
+        cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file) # get Camera datastruct ["id", "model", "width", "height", "params"]
 
     depth_params_file = os.path.join(path, "sparse/0", "depth_params.json")
     ## if depth_params_file isnt there AND depths file is here -> throw error
@@ -177,14 +177,14 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
             print(f"An unexpected error occurred when trying to open depth_params.json file: {e}")
             sys.exit(1)
 
-    if eval: # TODO: Check 
+    if eval:
         if "360" in path:
             llffhold = 8
         if llffhold:
             print("------------LLFF HOLD-------------")
             cam_names = [cam_extrinsics[cam_id].name for cam_id in cam_extrinsics]
             cam_names = sorted(cam_names)
-            test_cam_names_list = [name for idx, name in enumerate(cam_names) if idx % llffhold == 0]
+            test_cam_names_list = [name for idx, name in enumerate(cam_names) if idx % llffhold == 0] # every 8th image is used in test
         else:
             with open(os.path.join(path, "sparse/0", "test.txt"), 'r') as file:
                 test_cam_names_list = [line.strip() for line in file]
@@ -195,26 +195,26 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
     cam_infos_unsorted = readColmapCameras(
         cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, depths_params=depths_params,
         images_folder=os.path.join(path, reading_dir), 
-        depths_folder=os.path.join(path, depths) if depths != "" else "", test_cam_names_list=test_cam_names_list)
+        depths_folder=os.path.join(path, depths) if depths != "" else "", test_cam_names_list=test_cam_names_list) # get the list of CameraInfos
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
 
     train_cam_infos = [c for c in cam_infos if train_test_exp or not c.is_test]
     test_cam_infos = [c for c in cam_infos if c.is_test]
-
-    nerf_normalization = getNerfppNorm(train_cam_infos)
+    # nerf_normalization is scene_scale or self.spatial_lr_scale in create_from_pcd in /scene/gaussian_model.py
+    nerf_normalization = getNerfppNorm(train_cam_infos) # # {'translate': array([-0.09739162, -0.00522811, -0.11734623], dtype=float32), 'radius': 5.7794584274292}
 
     ply_path = os.path.join(path, "sparse/0/points3D.ply")
     bin_path = os.path.join(path, "sparse/0/points3D.bin")
     txt_path = os.path.join(path, "sparse/0/points3D.txt")
-    if not os.path.exists(ply_path):
+    if not os.path.exists(ply_path): # During first time running, read points3D.bin and apply storePly
         print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
         try:
-            xyz, rgb, _ = read_points3D_binary(bin_path)
+            xyz, rgb, _ = read_points3D_binary(bin_path) # errors not used
         except:
             xyz, rgb, _ = read_points3D_text(txt_path)
-        storePly(ply_path, xyz, rgb)
-    try:
-        pcd = fetchPly(ply_path)
+        storePly(ply_path, xyz, rgb) # to store the PC [set normals to zeros]
+    try: # fetech the point cloud to return BasicPointCloud(points=positions, colors=colors)
+        pcd = fetchPly(ply_path) # fetch the Pcd to make the SceneInfo DataStruct
     except:
         pcd = None
 

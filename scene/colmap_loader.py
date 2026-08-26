@@ -12,7 +12,7 @@
 import numpy as np
 import collections
 import struct
-# TODO: Check
+
 CameraModel = collections.namedtuple(
     "CameraModel", ["model_id", "model_name", "num_params"])
 Camera = collections.namedtuple(
@@ -62,7 +62,7 @@ def rotmat2qvec(R): # formula to convert rotation maxtrix back to quaternion
     eigvals, eigvecs = np.linalg.eigh(K)
     qvec = eigvecs[[3, 0, 1, 2], np.argmax(eigvals)]
     if qvec[0] < 0:
-        qvec *= -1 # # TODO: Check why multiplied by -1
+        qvec *= -1 
     return qvec
 
 class Image(BaseImage):
@@ -127,6 +127,12 @@ def read_points3D_binary(path_to_model_file):
     see: src/base/reconstruction.cc
         void Reconstruction::ReadPoints3DBinary(const std::string& path)
         void Reconstruction::WritePoints3DBinary(const std::string& path)
+        
+        Input: path to point cloud from SfM binary format. e.g './tandt/truck/sparse/0/points3D.bin'
+        Output:
+            xyz : [N,3] array of 3D points
+            rgbs: [N,3] array of RBG values per point
+        
     """
 
 
@@ -182,9 +188,15 @@ def read_extrinsics_binary(path_to_model_file):
     see: src/base/reconstruction.cc
         void Reconstruction::ReadImagesBinary(const std::string& path)
         void Reconstruction::WriteImagesBinary(const std::string& path)
+        
+        Input: binary file path to COLMAP processed images infomration, e.g. './tandt/truck/sparse/0/images.bin'
+        
+        Description: processes binary file to derive the following outputs
+        
+        Output: Dict consisting of integer key pointing to above defined BaseImage data-structure ["id", "qvec", "tvec", "camera_id", "name", "xys", "point3D_ids"]
     """
     images = {}
-    with open(path_to_model_file, "rb") as fid: # path_to_model_file = '/home/daeen/motif/gaussian-splatting/tandt/truck/sparse/0/images.bin'
+    with open(path_to_model_file, "rb") as fid: # path_to_model_file = './tandt/truck/sparse/0/images.bin'
         num_reg_images = read_next_bytes(fid, 8, "Q")[0]
         for _ in range(num_reg_images): # num_reg_images = 251  
             binary_image_properties = read_next_bytes(
@@ -217,6 +229,14 @@ def read_intrinsics_binary(path_to_model_file):
     see: src/base/reconstruction.cc
         void Reconstruction::WriteCamerasBinary(const std::string& path)
         void Reconstruction::ReadCamerasBinary(const std::string& path)
+        
+        Input: binary file path to COLMAP calibrated cameras, e.g. './tandt/truck/sparse/0/cameras.bin'
+        
+        Description: processes binary files to derive the following outputs
+        
+        Output: Dict consisting of integer key pointing to above defined Camera data structure ["id", "model", "width", "height", "params"]
+        e.g Camera(id=1, model='PINHOLE', width=977, height=545, params=array([581.88546999, 578.13061597, 488.5       , 272.5       ])
+        params: intrinsics (fx,fy,cx,cy)
     """
     cameras = {}
     with open(path_to_model_file, "rb") as fid:

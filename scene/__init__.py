@@ -44,7 +44,7 @@ class Scene:
         self.train_cameras = {} # initialize empty dict for training cameras
         self.test_cameras = {}
 
-        # select the data
+        # select the data-format and call the SceneInfo class
         if os.path.exists(os.path.join(args.source_path, "sparse")): # sparse folder: camera info with their frame id and image info, 3D points from SfM
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.depths, args.eval, args.train_test_exp) # get the whole COLMAP sceneinfo
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
@@ -71,7 +71,7 @@ class Scene:
             random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
             random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
 
-        self.cameras_extent = scene_info.nerf_normalization["radius"] # This cameras_extent linked to scene_scale # TODO: Check
+        self.cameras_extent = scene_info.nerf_normalization["radius"] # This cameras_extent linked to scene_scale
         # scales = [1.0] so resolution_scale is 1.0, so the original resolution of the images is used
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")

@@ -14,7 +14,7 @@ import math
 import numpy as np
 from typing import NamedTuple
 
-class BasicPointCloud(NamedTuple): # Class definition for PointCloid
+class BasicPointCloud(NamedTuple): # Class definition for PointCloud
     points : np.array
     colors : np.array
     normals : np.array

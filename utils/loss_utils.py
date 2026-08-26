@@ -45,7 +45,6 @@ def l2_loss(network_output, gt):
 
 
 """
-TODO: Check
 Explain the two basic and reasoning behind this window, gaussian functions in ssim
 Explain the ssim impact in loss
 """
@@ -71,7 +70,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
-# Purpose of SSIM: TODO: Check
+
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
     mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
     mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)

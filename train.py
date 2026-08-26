@@ -48,8 +48,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0 # set to 0
     tb_writer = prepare_output_and_logger(dataset) # output logger
     # building the gaussian model, setting the initial parameters values of 3D Gaussians, loading respective params to computational-graph for GD 
-    gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
-    scene = Scene(dataset, gaussians)
+    gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type) # from scene/gaussian_model.py
+    scene = Scene(dataset, gaussians) # from scene/__init__.py
     gaussians.training_setup(opt)
     if checkpoint: # if checkpoint exists, loaded here given argument --start_checkpoint
         (model_params, first_iter) = torch.load(checkpoint)
@@ -112,12 +112,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             pipe.debug = True
 
         bg = torch.rand((3), device="cuda") if opt.random_background else background # opt.random_background = False
-        # render the gaussian scene from the 
+        # render pipes the process for projections to viewspace and rasterizations
         render_pkg = render(viewpoint_cam, gaussians, pipe, bg, use_trained_exp=dataset.train_test_exp, separate_sh=SPARSE_ADAM_AVAILABLE)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         # what is this alpha mask and why all values are 1 in alphamask?
         if viewpoint_cam.alpha_mask is not None:
-            alpha_mask = viewpoint_cam.alpha_mask.cuda() # 
+            alpha_mask = viewpoint_cam.alpha_mask.cuda()
             image *= alpha_mask
 
         

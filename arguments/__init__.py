@@ -90,8 +90,8 @@ class ModelParams(ParamGroup):
 
 class PipelineParams(ParamGroup):
     def __init__(self, parser):
-        self.convert_SHs_python = False # set True for pass with pytorch (not cuda)
-        self.compute_cov3D_python = False # set True for pass with pytorch (not cuda)
+        self.convert_SHs_python = False # set True for pass with pytorch (not cuda) Check gaussian_renderer/__init__.py (line 69) for explanation.
+        self.compute_cov3D_python = False # set True for pass with pytorch (not cuda) Check gaussian_renderer/__init__.py (line 69) for explanation.
         self.debug = False # debugging mode
         self.antialiasing = False # low-pass filter (adds 0.3 variance) to prevent aliasing
         # sub-pixel Gaussians from causing aliasing effects 

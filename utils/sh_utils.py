@@ -51,10 +51,10 @@ import torch
 
 #  spherical harmonic function of degree ℓ and order m, is an associated Legendre polynomial
 # What are these values? Refer to https://en.wikipedia.org/wiki/Table_of_spherical_harmonics
-# deg 0
-# C0 = (1/2)*math.sqrt(1/math.pi)
+# normalization constants because SH basis is orthonormal 
+# C0 = (1/2)*math.sqrt(1/math.pi) deg 0 normalization constant
 C0 = 0.28209479177387814
-# deg 1
+# deg 1 normalization constant
 # C1 = C1 = (1/2)*math.sqrt(3/math.pi)*(1)
 C1 = 0.4886025119029199
 # deg 2
@@ -149,9 +149,10 @@ def eval_sh(deg, sh, dirs):
                             C4[8] * (xx * (xx - 3 * yy) - yy * (3 * xx - yy)) * sh[..., 24])
     return result
 
-# why (rgb - 0.5)? Why scaled by C0? There is mathematical formula for both funcs below
+
 def RGB2SH(rgb):
     return (rgb - 0.5) / C0
-
+# we multiply the learnt coefficient sh with base 0 constant & add 0.5
+# a 0 sH (no learnt color) is gray rather than black
 def SH2RGB(sh):
     return sh * C0 + 0.5
