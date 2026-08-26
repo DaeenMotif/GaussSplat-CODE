@@ -92,8 +92,9 @@ class PipelineParams(ParamGroup):
         self.convert_SHs_python = False # set True for pass with pytorch (not cuda) Check gaussian_renderer/__init__.py (line 69) for explanation.
         self.compute_cov3D_python = False # set True for pass with pytorch (not cuda) Check gaussian_renderer/__init__.py (line 69) for explanation.
         self.debug = False # debugging mode
+        
         self.antialiasing = False # low-pass filter (adds 0.3 variance) to prevent aliasing
-        # sub-pixel Gaussians from causing aliasing effects 
+        # prevents sub-pixel Gaussians from causing aliasing effects 
         super().__init__(parser, "Pipeline Parameters")
 
 # Refer: Section 5 of the paper for details on the optimization parameters
@@ -105,9 +106,16 @@ class OptimizationParams(ParamGroup):
         self.position_lr_final = 0.0000016 # lr for 3D gaussian means at end (low at end)
         self.position_lr_delay_mult = 0.01 # this is the decay multiplier
         # for decay function, look at self.xyz_scheduler_args in gaussian_model.py and utils/general_utils.py
-        self.position_lr_max_steps = 30_000 # heuristic setting across all experiments in paper, allow more steps to better optimize
-        self.feature_lr = 0.0025 # learning rate for the SH parameters, separate rates for different degrees
+        self.position_lr_max_steps = 30_000 # heuristic setting across all experiments in paper, allow more steps to better optimize positions; allow better comparison of rendered image w/ GT
+        
+        self.feature_lr = 0.0025 # learning rate for the SH parameters, separate rates for base vs higher sH degrees (divided by 20)
+        # Higher-order sH bases, for view-dependent colors, are senistive to limited camera observation
+        
+        
         self.opacity_lr = 0.025 # heuristic setting of opacity
+        
+        # The scaling lr rate is lower to small changes in scale, and also rotation is even smaller, as quaternions are unit-vectors.
+        # High rotational lr can cause big geometric effects of elongated anistropic splats
         self.scaling_lr = 0.005 # high scaling learning rate changes can make covariance matrix unstable
         self.rotation_lr = 0.001 # unit normalized value for quaternion, also high learning rate can cause noisy rotation learning
         
@@ -121,7 +129,9 @@ class OptimizationParams(ParamGroup):
         self.percent_dense = 0.01 # this is scaling factor for the scene-scale; important for xyz scaling
         self.lambda_dssim = 0.2 # heuristic scale for loss function, this value (0.2) weights the ssim loss for structural learning from viewspace
         self.densification_interval = 100 # densify every 100 iterations
+        
         self.opacity_reset_interval = 3000 # reset opacity every 3K iterations
+        
         self.densify_from_iter = 500 # start densifying after 500 iterations, every 100 iterations, until 15K iterations
         self.densify_until_iter = 15_000 # densify until 15K iterations, then stop densifying
         self.densify_grad_threshold = 0.0002 # max_grad: 0.0002 from code and paper

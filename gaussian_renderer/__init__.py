@@ -55,11 +55,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         pass
 
     # Set up rasterization configuration
-    # IN screenspace,  # tanfovx = 0.5W/focal_length 
+    # IN screenspace,  # tanfovx = (0.5*W)/fx and tanfovx = (0.5*H)/fy
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
-    # set the gaussian rasterization settings
+    # set the gaussian rasterization settings that pipes to submodules/diff-gaussian-rasterization/diff_gaussian_rasterization/__init__.py
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -76,7 +76,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         antialiasing=pipe.antialiasing # enable anti-aliasing which optimizes opacity differently
     )
 
-    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+    rasterizer = GaussianRasterizer(raster_settings=raster_settings) # run the GaussianRasterizer.forward()
 
     means3D = pc.get_xyz # [N,3]
     means2D = screenspace_points # [N,3] means2D are first set to 0
@@ -100,7 +100,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     colors_precomp = None
     if override_color is None: # it is none
         if pipe.convert_SHs_python: ## pc.get_features: [N,16,3] and transpose(1,2).view(-1,3,(3+1)**2) >> [N,3,16]
-            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2) # pc.get_features is concatenated SH base 0  and higher SH base features
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2) # pc.get_features is concatenated SH base 0 and higher SH base features
             # same code below in CUDA: forward.cu:line21 : __device__ glm::vec3 computeColorFromSH
             # viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1) : [N, 3], get_xyz : [N, 3]
             dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1)) # center of 3D Gaussian - center of cam-center
@@ -152,7 +152,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     rendered_image = rendered_image.clamp(0, 1)
     out = {
         "render": rendered_image,
-        "viewspace_points": screenspace_points, # # In viewspace, we consider 2D projected gaussians
+        "viewspace_points": screenspace_points, # # in viewspace, we consider 2D projected gaussians
         "visibility_filter" : (radii > 0).nonzero(), # filter selects specific viewspace points' gradients and accumulate over iterations
         "radii": radii, # radii of gaussians
         "depth" : depth_image

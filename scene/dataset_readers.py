@@ -50,6 +50,8 @@ def getNerfppNorm(cam_info):
         cam_centers = np.hstack(cam_centers)
         avg_cam_center = np.mean(cam_centers, axis=1, keepdims=True)
         center = avg_cam_center
+        # the assumption: scenes are captured around in 360 style in NeRF, hence avg cam center would be the center of scene.
+        # Then take the distance to the farthest camera from the scene center
         dist = np.linalg.norm(cam_centers - center, axis=0, keepdims=True) # get the largest distance between center and some camera
         diagonal = np.max(dist)
         return center.flatten(), diagonal

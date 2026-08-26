@@ -25,8 +25,9 @@ class Scene:
     def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0]):
         """b
         :param path: Path to colmap scene main folder.
-        Build a 3DGS scene
-        
+        Build a dataset-backed scene object for Gaussian training.
+        The Scene is the boundary between raw image/pose data and the Gaussian model.
+        It resolves the dataset type, loads camera metadata, and initializes or restores the Gaussian cloud.
         Resolution of images is kept constant across all cameras if [1.0] (default)
         """
         self.model_path = args.model_path
