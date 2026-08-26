@@ -368,7 +368,7 @@ renderCUDA(
 			// Resample using conic matrix (cf. "Surface 
 			// Splatting" by Zwicker et al., 2001)
 			float2 xy = collected_xy[j]; //  xy: the 2d coord of the Gaussian center
-			float2 d = { xy.x - pixf.x, xy.y - pixf.y }; // pixf: the 2d coord of the current pixel; 
+			float2 d = { xy.x - pixf.x, xy.y - pixf.y }; // pixf: the 2d coord of the current pixel; d is the distance at pixel level
 			float4 con_o = collected_conic_opacity[j]; // // con_o: inv cov2d (x,y,z), opacity (w)
 			float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
 			if (power > 0.0f)
