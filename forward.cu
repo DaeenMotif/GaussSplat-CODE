@@ -288,7 +288,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: num gaussians, D: sH d
 	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling }; // opacity scaled for anti-aliasing with h_convolution_scaling, which is otherwise 1
 
 
-	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);// save number of tiles this gaussian overlaps
+	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x); // save number of tiles this gaussian overlaps
 }
 
 // Main rasterization method. Collaboratively works on one tile per
@@ -379,8 +379,8 @@ renderCUDA(
 
 			// Eq. (2) from 3D Gaussian splatting paper.
 			// Obtain alpha by multiplying with Gaussian opacity (contribution from opacity)
-			// and its exponential falloff from mean.
-			// Avoid numerical instabilities (see paper appendix). 
+			// and its exponential falloff from mean
+			// Avoid numerical instabilities (see paper appendix)
 			float alpha = min(0.99f, con_o.w * exp(power));
 			if (alpha < 1.0f / 255.0f) // if contribution < 1/255 skip that gaussian contribution
 				continue;
@@ -394,7 +394,7 @@ renderCUDA(
 				continue;
 			}
 
-			// Eq. (3) from 3D Gaussian splatting paper.
+			// Eq. (3) from 3D Gaussian splatting paper
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 

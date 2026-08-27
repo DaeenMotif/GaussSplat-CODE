@@ -74,8 +74,8 @@ __global__ void checkFrustum(int P, // this func is a checker for the one in aux
 
 __global__ void duplicateWithKeys(
 	int P, // Np. of gaussians
-	const float2* points_xy,
-	const float* depths,
+	const float2* points_xy, // mean of 2D Gaussians
+	const float* depths, // depths of gaussians
 	const uint32_t* offsets,
 	uint64_t* gaussian_keys_unsorted,
 	uint32_t* gaussian_values_unsorted,

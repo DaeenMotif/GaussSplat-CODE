@@ -45,8 +45,10 @@ def l2_loss(network_output, gt):
 
 
 """
-Explain the two basic and reasoning behind this window, gaussian functions in ssim
 Explain the ssim impact in loss
+Gaussian Window: window acts like human observation: sharp focus on center
+Peripheral visual signals get weak away from mean (center)
+Structural Preservation: SSIM adds sensitivity to local structure (through window), edges, and region consistency
 """
 
 
