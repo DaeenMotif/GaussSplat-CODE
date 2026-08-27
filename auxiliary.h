@@ -170,7 +170,7 @@ __forceinline__ __device__ bool in_frustum(int idx,
 	p_view = transformPoint4x3(p_orig, viewmatrix); // compute the camera view space 3D point
 
 	// reject point if depth <= 0.2 (very near plane)
-	if (p_view.z <= 0.2f)// || ((p_proj.x < -1.3 || p_proj.x > 1.3 || p_proj.y < -1.3 || p_proj.y > 1.3)))
+	if (p_view.z <= 0.2f)// || ((p_proj.x < -1.3 || p_proj.x > 1.3 || p_proj.y < -1.3 || p_proj.y > 1.3))) approx for 99% frustum culling
 	{
 		if (prefiltered) // if point is prefiltered, it shouldnt here
 		{
