@@ -31,14 +31,14 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // pointer to the SH coefficients for this specific Gaussian
 	glm::vec3 result = SH_C0 * sh[0];
 
-	if (deg > 0) // deg 1 : xyz components for sH
+	if (deg > 0) // deg 1 : xyz components for sH Linear directional lighting
 	{
 		float x = dir.x; // separate the normalized viewing direction components x
 		float y = dir.y; // separate the normalized viewing direction components y
 		float z = dir.z; // separate the normalized viewing direction components z
 		result = result - SH_C1 * y * sh[1] + SH_C1 * z * sh[2] - SH_C1 * x * sh[3]; //constant * view_dir * sh_learned_coeff
 
-		if (deg > 1)
+		if (deg > 1) // Quadratic directional and basic specular-like effects
 		{
 			float xx = x * x, yy = y * y, zz = z * z;
 			float xy = x * y, yz = y * z, xz = x * z;
@@ -49,7 +49,7 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 				SH_C2[3] * xz * sh[7] +
 				SH_C2[4] * (xx - yy) * sh[8];
 
-			if (deg > 2)
+			if (deg > 2) // cbic and high-frequency details
 			{
 				result = result +
 					SH_C3[0] * y * (3.0f * xx - yy) * sh[9] +
