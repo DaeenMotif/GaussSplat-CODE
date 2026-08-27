@@ -110,12 +110,14 @@ class OptimizationParams(ParamGroup):
         
         self.feature_lr = 0.0025 # learning rate for the SH parameters, separate rates for base vs higher sH degrees (divided by 20)
         # Higher-order sH bases, for view-dependent colors, are senistive to limited camera observation
+        # Rendering is resultant effect of many coefficients of sH, so lower lr_rate helps reduce effects of unstable appearance optimization
         
-        
-        self.opacity_lr = 0.025 # heuristic setting of opacity
+        self.opacity_lr = 0.025 # Highest among attributes
+        # Achieve appropriate coloring of the rendering image to learn faster.
+        # Also, another reason could be to be able to learn fast after opacity resets.
         
         # The scaling lr rate is lower to small changes in scale, and also rotation is even smaller, as quaternions are unit-vectors.
-        # High rotational lr can cause big geometric effects of elongated anistropic splats
+        # High rotational lr can cause big geometric effects of elongated (due to scale) anistropic splats
         self.scaling_lr = 0.005 # high scaling learning rate changes can make covariance matrix unstable
         self.rotation_lr = 0.001 # unit normalized value for quaternion, also high learning rate can cause noisy rotation learning
         

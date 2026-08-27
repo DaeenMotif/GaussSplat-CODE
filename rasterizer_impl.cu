@@ -65,18 +65,13 @@ __global__ void checkFrustum(int P, // this func is a checker for the one in aux
 	present[idx] = in_frustum(idx, orig_points, viewmatrix, projmatrix, false, p_view); // present 
 }
 
-/*
-Sorting Algo: prepare for color rendering
-Sorting of the 3D points by depth (proximity to an image plane) and grouping them by tiles.
-The first is needed to compute transmittance.
-Grouping by tiles limit weighted sum for each pixel to α-blending of the relevant 3D points only
-The grouping is achieved using simple 16×16 pixel tiles
-Implemented such that a Gaussian can land in a few tiles if it overlaps more than a single view frustum
- */
 
 
 // Generates one key/value pair for all Gaussian / tile overlaps. 
 // Run once per Gaussian (1:N mapping).
+// A single gaussian can overlap multiple tiles, we need to duplicate it for each tile it touches
+// allows iterating over a contiguous array of Gaussian IDs for the specific tile
+
 __global__ void duplicateWithKeys(
 	int P, // Np. of gaussians
 	const float2* points_xy,
@@ -109,10 +104,10 @@ __global__ void duplicateWithKeys(
 		{
 			for (int x = rect_min.x; x < rect_max.x; x++)
 			{
-				uint64_t key = y * grid.x + x;
+				uint64_t key = y * grid.x + x; // High 32 bits: Tile ID (y * grid.x + x)
 				key <<= 32;
-				key |= *((uint32_t*)&depths[idx]);
-				gaussian_keys_unsorted[off] = key;
+				key |= *((uint32_t*)&depths[idx]); // low 32 bits: View-space depth
+				gaussian_keys_unsorted[off] = key; // unsorted key and the original Gaussian ID (value)
 				gaussian_values_unsorted[off] = idx;
 				off++;
 			}
@@ -123,6 +118,9 @@ __global__ void duplicateWithKeys(
 // Check keys to see if it is at the start/end of one tile's range in 
 // the full sorted list. If yes, write start/end of this tile. 
 // Run once per instanced (duplicated) Gaussian ID.
+// After RadixSort, we have a flat array of all overlaps, sorted by Tile ID.
+// To process a tile independently, the block handling that tile needs to know 
+// where its Gaussians start and end in this giant flat array.
 __global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* ranges)
 {
 	auto idx = cg::this_grid().thread_rank();
@@ -131,7 +129,7 @@ __global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* rang
 
 	// Read tile ID from key. Update start/end of tile range if at limit.
 	uint64_t key = point_list_keys[idx];
-	uint32_t currtile = key >> 32;
+	uint32_t currtile = key >> 32; // extract the tile ID from the high 32 bits
 	if (idx == 0)
 		ranges[currtile].x = 0;
 	else

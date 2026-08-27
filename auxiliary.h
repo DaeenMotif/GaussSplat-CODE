@@ -45,6 +45,8 @@ __forceinline__ __device__ float ndc2Pix(float v, int S)
 
 // The screen is divided into grid of 16X16 pixel tiles
 // each projected 3D gaussian (2D Gauss) bounded by a rect of tiles
+// p : projected 2D Gaussian center
+
 __forceinline__ __device__ void getRect(const float2 p, int max_radius, uint2& rect_min, uint2& rect_max, dim3 grid)
 {
 	rect_min = {

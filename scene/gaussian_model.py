@@ -170,7 +170,7 @@ class GaussianModel:
     def create_from_pcd(self, pcd : BasicPointCloud, cam_infos : int, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale # spatial_lr_scale = 5.779 for T&T truck, spatial scale obtained getNerfppNorm in dataset_readers.py
         fused_point_cloud = torch.tensor(np.asarray(pcd.points)).float().cuda() # construct tensor of 3D points obtained from fusing multiple 2D observations in COLMAP to 3D
-        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) # fused color for points taken from multiple imgs; convert the 3-ch RGB from SfM points to 3-ch sH value
+        fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) # fused color for points taken from multiple imgs triangulating to same point; convert the 3-ch RGB from SfM points to 3-ch sH value
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda() # shape features: [N, 3, 16]
         features[:, :3, 0 ] = fused_color # only set the 0th idx (base color) of 3d Gaussians to SfM PointCloud color
         features[:, 3:, 1:] = 0.0 # this line is redundant, alrdy initialized to 0.0
@@ -219,6 +219,8 @@ class GaussianModel:
             This helps reduce effects of unstable appearance optimization; first learning basic appearance is important, also why sH are activated every 1K iterations
             The scaling lr rate is lower to small changes in scale, and also rotation is even smaller, as quaternions are unit-vectors.
             High rotational lr can cause big geometric effects of elongated anistropic splats
+            Opacity lr is highest, likely to achieve appropriate coloring of the rendering image to learn faster.
+            # Another reason could be to be able to learn fast after opacity resets.
         '''
         
         
@@ -389,7 +391,7 @@ class GaussianModel:
 
                 del self.optimizer.state[group['params'][0]] # del old param
                 group["params"][0] = nn.Parameter(tensor.requires_grad_(True)) # Create a new optimizable parameter
-                self.optimizer.state[group['params'][0]] = stored_state # for the group, set 
+                self.optimizer.state[group['params'][0]] = stored_state # for the group, set 0 momentum stored states
 
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
@@ -460,7 +462,7 @@ class GaussianModel:
         return optimizable_tensors
     
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_tmp_radii):
-        # newly spawned Gaussian attributes into a dic
+        # newly spawned Gaussian attributes into a dict
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,

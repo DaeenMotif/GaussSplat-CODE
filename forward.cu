@@ -28,10 +28,10 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 
 	dir = dir / glm::length(dir); // normalize viewing direction vector
 
-	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // index the specific gaussians sh_learned_coeff
+	glm::vec3* sh = ((glm::vec3*)shs) + idx * max_coeffs; // pointer to the SH coefficients for this specific Gaussian
 	glm::vec3 result = SH_C0 * sh[0];
 
-	if (deg > 0)
+	if (deg > 0) // deg 1 : xyz components for sH
 	{
 		float x = dir.x; // separate the normalized viewing direction components x
 		float y = dir.y; // separate the normalized viewing direction components y
@@ -64,12 +64,13 @@ __device__ glm::vec3 computeColorFromSH(int idx, int deg, int max_coeffs, const 
 	}
 	// From sh_utils.py
 	// we multiply the learnt coefficient sh with base 0 constant & add 0.5
-	// a 0 sH (no learnt color) is gray rather than black because of adding 0.5
+	// dc sh coefficients are initialized from data so they are not 0
+	// however, sH coefficients are normalized so a resultant effect from sH if 0, lands on gray (by convention)
 	result += 0.5f; // here results is sh * C0
 
 	// RGB colors are clamped to positive values. If values are
 	// clamped, we need to keep track of this for the backward pass
-	// color = C0 * f_dc + 0.5 is affine, ∂color/∂f_dc = C0 regardless of the offset.
+	/
 	clamped[3 * idx + 0] = (result.x < 0);
 	clamped[3 * idx + 1] = (result.y < 0);
 	clamped[3 * idx + 2] = (result.z < 0);
@@ -90,8 +91,8 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 	const float limy = 1.3f * tan_fovy; // tan_fovx = X/Z; gaussians near camera plane 
 	const float txtz = t.x / t.z;
 	const float tytz = t.y / t.z;
-	t.x = min(limx, max(-limx, txtz)) * t.z;
-	t.y = min(limy, max(-limy, tytz)) * t.z;
+	t.x = min(limx, max(-limx, txtz)) * t.z; // just measuring t.x
+	t.y = min(limy, max(-limy, tytz)) * t.z; // just measuring t.y
 	/*
 		J = [[f_x/z   0    -f_x * x /z**2]
              [  0   f_y/z   -f_y * y /z**2]
@@ -164,7 +165,7 @@ __device__ void computeCov3D(const glm::vec3 scale, float mod, const glm::vec4 r
 
 // Perform initial steps for each Gaussian prior to rasterization. // this is the processing from 3D to image pixel colors
 template<int C>
-__global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, M: max coeff (0-15)
+__global__ void preprocessCUDA(int P, int D, int M, // P: num gaussians, D: sH deg, M: total number of SH coefficients per gaussian (e.g. 16 for deg 3)
 	const float* orig_points, // original 3D points (mean3D) [N,3]
 	const glm::vec3* scales, // scale vectors [N,3]
 	const float scale_modifier, // value is 1.0
@@ -184,14 +185,14 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	float2* points_xy_image, // center of 2D gaussians
 	float* depths,
 	float* cov3Ds, // Gaussians cov3D matrices
-	float* rgb, // Each gaussian's RGB colors
+	float* rgb, // Each gaussian's rgb output buffer
 	float4* conic_opacity, // the inverse symmtric cov2D matrix (xx,xy,yy) along with the opacity 
 	const dim3 grid,
 	uint32_t* tiles_touched, // for each indexed gaussian get the tileIDs it overlaps
 	bool prefiltered, // check if gaussian is already filtered for frustum-culling
 	bool antialiasing)
 {
-	auto idx = cg::this_grid().thread_rank();
+	auto idx = cg::this_grid().thread_rank(); // thread indexing
 	if (idx >= P)
 		return;
 
@@ -205,7 +206,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	if (!in_frustum(idx, orig_points, viewmatrix, projmatrix, prefiltered, p_view)) // dont process gaussians outside view-frustum
 		return;
 
-	// Transform point by projecting
+	// Transform point by projecting to 2D screen space
 	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] }; // 3D mean of gaussians; array is flattened so idx*3
 	float4 p_hom = transformPoint4x4(p_orig, projmatrix); // transform the 3d mean from world to 2D viewspace homogenous coordinates
 	float p_w = 1.0f / (p_hom.w + 0.0000001f); // convert to  (NDC coords) [-1,1] and avoid 0-division error
@@ -228,8 +229,9 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	float3 cov = computeCov2D(p_orig, focal_x, focal_y, tan_fovx, tan_fovy, cov3D, viewmatrix);
 
 	/*
-	This 8 codelines below are for low-pass filter and antialiasing;
+	If a Gaussian is smaller than a pixel, it causes aliasing
 	cov2d = (sigma_xx, sigma_xy, sigma_yy) == (cov.x, cov.y, cov.z)
+	enlarge it by adding a variance of 0.3 to the diagonal
 	*/
 	constexpr float h_var = 0.3f; // heuristic variance adder;  adding some positive value to the diagonal means adding λI
 	// make it invertible; positive definite 
@@ -262,7 +264,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) }; // convert NDC -> pixel space for gaussians
 	uint2 rect_min, rect_max; // initialize the rectangle
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
-	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
+	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0) // getRect calculates the bounding box of tiles that the radius (splat) covers
 		return; // Cull if it doesn't intersect any tiles ( outside the frustum)
 
 	// If colors have been precomputed, use them, otherwise convert
@@ -286,7 +288,7 @@ __global__ void preprocessCUDA(int P, int D, int M, // P: numpoints, D: sH deg, 
 	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacity * h_convolution_scaling }; // opacity scaled for anti-aliasing with h_convolution_scaling, which is otherwise 1
 
 
-	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
+	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);// save number of tiles this gaussian overlaps
 }
 
 // Main rasterization method. Collaboratively works on one tile per
@@ -296,23 +298,23 @@ template <uint32_t CHANNELS> // each thread treat 1 tile
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderCUDA(
 	const uint2* __restrict__ ranges,
-	const uint32_t* __restrict__ point_list,
+	const uint32_t* __restrict__ point_list, // sorted Gaussian IDs
 	int W, int H,
-	const float2* __restrict__ points_xy_image,
-	const float* __restrict__ features,
-	const float4* __restrict__ conic_opacity,
+	const float2* __restrict__ points_xy_image, // screen-space centers (x,y) of all Gaussians
+	const float* __restrict__ features, // RGB colors
+	const float4* __restrict__ conic_opacity, // inverse 2D covariance and opacity
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
-	const float* __restrict__ bg_color,
-	float* __restrict__ out_color,
+	const float* __restrict__ bg_color, // Background color
+	float* __restrict__ out_color, // final rendered RGB image
 	const float* __restrict__ depths,
 	float* __restrict__ invdepth)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
-	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
-	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };
-	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) };
+	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X; // number of tiles that cover the width of the image
+	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };// top-left pixel coordinate (x,y) of the current tile
+	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) }; // bottom-right pixel coordinate (x,y) of the current tile
 	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y };
 	uint32_t pix_id = W * pix.y + pix.x;
 	float2 pixf = { (float)pix.x, (float)pix.y };
@@ -322,10 +324,10 @@ renderCUDA(
 	// Done threads can help with fetching, but don't rasterize
 	bool done = !inside;
 
-	// Load start/end range of IDs to process in bit sorted list.
+	// Load start/end range of IDs to process in bit sorted list. 
 	uint2 range = ranges[block.group_index().y * horizontal_blocks + block.group_index().x];
 	const int rounds = ((range.y - range.x + BLOCK_SIZE - 1) / BLOCK_SIZE);
-	int toDo = range.y - range.x;
+	int toDo = range.y - range.x; // total # of Gaussians overlapping this tile
 
 	// Allocate storage for batches of collectively fetched data.
 	__shared__ int collected_id[BLOCK_SIZE];
@@ -333,10 +335,10 @@ renderCUDA(
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
 
 	// Initialize helper variables
-	float T = 1.0f;
+	float T = 1.0f; // transmittance starts at 1
 	uint32_t contributor = 0;
-	uint32_t last_contributor = 0;
-	float C[CHANNELS] = { 0 };
+	uint32_t last_contributor = 0; 
+	float C[CHANNELS] = { 0 }; // accumulated RGB color for this thread's pixel
 
 	float expected_invdepth = 0.0f;
 
@@ -352,14 +354,14 @@ renderCUDA(
 		int progress = i * BLOCK_SIZE + block.thread_rank();
 		if (range.x + progress < range.y)
 		{
-			int coll_id = point_list[range.x + progress];
+			int coll_id = point_list[range.x + progress]; // collect id of gaussian
 			collected_id[block.thread_rank()] = coll_id;
-			collected_xy[block.thread_rank()] = points_xy_image[coll_id];
+			collected_xy[block.thread_rank()] = points_xy_image[coll_id]; // collect its pixel location and conic opacity
 			collected_conic_opacity[block.thread_rank()] = conic_opacity[coll_id];
 		}
 		block.sync();
 
-		// Iterate over current batch
+		// Iterate over current batch 
 		for (int j = 0; !done && j < min(BLOCK_SIZE, toDo); j++)
 		{
 			// Keep track of current position in range
@@ -367,6 +369,7 @@ renderCUDA(
 
 			// Resample using conic matrix (cf. "Surface 
 			// Splatting" by Zwicker et al., 2001)
+			// Read the center (xy) and compute the 2D offset (d) from the Gaussian center to pixel.
 			float2 xy = collected_xy[j]; //  xy: the 2d coord of the Gaussian center
 			float2 d = { xy.x - pixf.x, xy.y - pixf.y }; // pixf: the 2d coord of the current pixel; d is the distance at pixel level
 			float4 con_o = collected_conic_opacity[j]; // // con_o: inv cov2d (x,y,z), opacity (w)
@@ -375,14 +378,17 @@ renderCUDA(
 				continue;
 
 			// Eq. (2) from 3D Gaussian splatting paper.
-			// Obtain alpha by multiplying with Gaussian opacity
+			// Obtain alpha by multiplying with Gaussian opacity (contribution from opacity)
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
 			float alpha = min(0.99f, con_o.w * exp(power));
-			if (alpha < 1.0f / 255.0f)
+			if (alpha < 1.0f / 255.0f) // if contribution < 1/255 skip that gaussian contribution
 				continue;
+			
+			// alpha-composition: front to back
+			// T_new = T_old * (1 - alpha)
 			float test_T = T * (1 - alpha);
-			if (test_T < 0.0001f)
+			if (test_T < 0.0001f) // a check to stop alpha blending if saturation is reached
 			{
 				done = true;
 				continue;
@@ -407,8 +413,11 @@ renderCUDA(
 	// rendering data to the frame and auxiliary buffers.
 	if (inside)
 	{
+		// save the final transmittance and the index of the last contributing Gaussian
 		final_T[pix_id] = T;
 		n_contrib[pix_id] = last_contributor;
+		
+		// Blend the accumulated color w. bg color using the transmittance
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
 
