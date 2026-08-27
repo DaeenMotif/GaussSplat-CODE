@@ -36,7 +36,7 @@ class GaussianModel:
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation): # Implementation exists in the CUDA Rasterization codefile forward.cu This is only used if the argument compute_cov3D_python (from arguments/__init__.py) is set to True.
             # Covariance  = RSS'R' wher S' is S transpose
             L = build_scaling_rotation(scaling_modifier * scaling, rotation) # L = RS
-            #symmetry an positive semi-definiteness from the L @ L.T form
+            # symmetry and positive semi-definiteness from the L @ L.T form
             actual_covariance = L @ L.transpose(1, 2) # building the cov3D RS@S'R'; L.tranpose [dim (N,3,3)] creates the S'R'
             symm = strip_symmetric(actual_covariance) # since symmetric, extracts the 6 unique upper-triangular entries of a matrix
             print(symm)

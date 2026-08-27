@@ -122,9 +122,9 @@ class OptimizationParams(ParamGroup):
         self.rotation_lr = 0.001 # unit normalized value for quaternion, also high learning rate can cause noisy rotation learning
         
         # Exposure compensation learning rate parameters (additional implementation)
-        self.exposure_lr_init = 0.01
-        self.exposure_lr_final = 0.001
-        self.exposure_lr_delay_steps = 0
+        self.exposure_lr_init = 0.01 # exposure is learned with a decaying learning rate schedule
+        self.exposure_lr_final = 0.001 # final learning rate
+        self.exposure_lr_delay_steps = 0 # scales the learning rate by some smoothing function along w/ the multiplier delay_mult
         self.exposure_lr_delay_mult = 0.0
         
         
