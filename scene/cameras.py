@@ -78,6 +78,7 @@ class Camera(nn.Module):
             self.invdepthmap = torch.from_numpy(self.invdepthmap[None]).to(self.data_device)
 
         # # znear and zfar define the near and far clipping planes of the camera frustum used to project 3D points into 2D screen space
+        # from OPENGL convention
         self.zfar = 100.0 
         self.znear = 0.01
 
