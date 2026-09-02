@@ -226,8 +226,8 @@ class GaussianModel:
         
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"}, # xyz dim [N,3]
-            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},# SH=0 (diffuse color) dim [N,1,3] # 3 is spatial dim xyz
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},# SH>0 dim [N, 15, 3]
+            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},# SH=0 (diffuse color) dim [N,1,3] # 3 refers to 3-sH coeff, one each rgb channel
+            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},# deg(sH)>0 dim [N, 15, 3], 3 refers to 3-sH coeff, one each rgb channel
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},# opacity dim [N,1]
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"}, # # scaling dim [N,3]
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"} # rotation is quaternion of dim [N,4]

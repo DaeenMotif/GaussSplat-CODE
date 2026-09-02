@@ -9,7 +9,7 @@ def get_scales(key, cameras, images, points3d_ordered, args):
     image_meta = images[key]
     cam_intrinsic = cameras[image_meta.camera_id]
 
-    pts_idx = images_metas[key].point3D_ids
+    pts_idx = images_metas[key].point3D_ids # colmap point3D ids
 
     mask = pts_idx >= 0
     mask *= pts_idx < len(points3d_ordered)
@@ -23,9 +23,9 @@ def get_scales(key, cameras, images, points3d_ordered, args):
         pts = np.array([0, 0, 0])
 
     R = qvec2rotmat(image_meta.qvec)
-    pts = np.dot(pts, R.T) + image_meta.tvec
+    pts = np.dot(pts, R.T) + image_meta.tvec # projects sparse points into each view, 
 
-    invcolmapdepth = 1. / pts[..., 2] 
+    invcolmapdepth = 1. / pts[..., 2] # converts to inverse depth, 
     n_remove = len(image_meta.name.split('.')[-1]) + 1
     invmonodepthmap = cv2.imread(f"{args.depths_dir}/{image_meta.name[:-n_remove]}.png", cv2.IMREAD_UNCHANGED)
     
@@ -53,7 +53,7 @@ def get_scales(key, cameras, images, points3d_ordered, args):
         ## Median / dev
         t_colmap = np.median(invcolmapdepth)
         s_colmap = np.mean(np.abs(invcolmapdepth - t_colmap))
-
+        # least-squares fits a per-image
         t_mono = np.median(invmonodepth)
         s_mono = np.mean(np.abs(invmonodepth - t_mono))
         scale = s_colmap / s_mono
